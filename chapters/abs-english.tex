@@ -1,0 +1,21 @@
+%英文摘要，自行编辑内容
+
+
+
+
+\chapter{ABSTRACT}
+\xiaosi
+
+Optical remote sensing imagery has significant application value in Earth observation and resource and environmental monitoring. However, due to cloud cover and complex atmospheric conditions, large areas of information are often missing in these images, severely limiting their reliability and practicality in refined remote sensing applications. Synthetic Aperture Radar (SAR) imagery possesses all-weather, day-and-night imaging capabilities, and can stably acquire surface structure information even under cloud cover conditions, providing an important auxiliary information source for cloud removal from optical remote sensing imagery. However, the significant differences between SAR and optical imagery in imaging mechanisms, spatial resolution characteristics, and information representation formats mean that the effective coordination and fusion of multimodal information still faces considerable challenges.
+
+To address these issues, this paper focuses on the task of cloud removal from multimodal remote sensing imagery using SAR and optical co-processing. It systematically analyzes the degradation mechanism and information loss characteristics of remote sensing images and proposes a SAR-Guided Dual-Branch Network for Cloud Removal (SGN-CR). This network employs a dual-branch coding architecture, performing feature modeling on SAR and cloud-covered optical images separately. The structural information extracted from the SAR branch serves as prior knowledge, guiding the feature learning process of the optical branch. By introducing a SAR-guided attention modulation mechanism during feature extraction, SGN-CR effectively enhances structure perception capabilities in cloud-covered areas, suppressing the negative impact of cloud interference on optical feature modeling.
+
+Building upon this, this paper further designs a hierarchical collaborative cross-modal feature fusion strategy, achieving an organic combination of shallow structural constraints and deep semantic complementarity, thereby improving the stability and structural consistency of optical image reconstruction under thick cloud cover conditions. Extensive comparative experiments based on publicly available remote sensing datasets demonstrate that the proposed SGN-CR method outperforms existing mainstream methods in multiple quantitative evaluation metrics, including peak signal-to-noise ratio, structural similarity, and spectral consistency, exhibiting stronger structural recovery capabilities and robustness, especially in large-area cloud-covered scenarios. Further ablation experiments validate the effectiveness of the key module design. To address the computational efficiency requirements in practical applications, this paper also proposes a lightweight improved model, Lite-SGN-CR, which significantly reduces the number of model parameters and computational complexity while maintaining relatively stable cloud removal performance.
+\\
+
+\noindent\textbf{Keywords：} 
+\begin{minipage}[t]{0.85\linewidth}
+	Remote sensing imagery, cloud removal, SAR-optical multimodal, structure-guided, deep learning, lightweight
+\end{minipage}
+
+\clearpage

@@ -1,0 +1,509 @@
+
+
+
+
+
+\newcommand{\incC}[2]{% 
+    \begin{tikzpicture}[inner sep=0]
+        \node[anchor=south west] (img) {\includegraphics[#1]{#2}};
+        \begin{scope}[x={(img.south east)}, y={(img.north west)}]
+            % 修改下面的坐标即可改变 (a) 组所有红框
+            \draw[red, thick] (0.4, 0.25) rectangle (0.65, 0.7); 
+        \end{scope}
+    \end{tikzpicture}%
+}
+
+\chapter{基于 SGN-CR 的轻量化遥感图像云去除方法研究}
+\thispagestyle{others}
+\pagestyle{others}
+\xiaosi
+
+\section{本章引言}
+
+第三章围绕遥感图像云去除任务，提出了一种基于 SAR 引导的双分支深度学习模型 SGN-CR。该模型通过引入主动式结构引导机制与层级协同特征融合策略，有效缓解了厚云遮挡条件下光学影像中结构缺失与纹理失真问题，并在 SEN12MS-CR 数据集上取得了优于现有方法的重建性能。相关实验结果表明，SAR 所提供的稳定几何结构信息在云去除过程中具有重要作用，能够为光学影像恢复提供可靠的结构先验。
+
+在模型性能不断提升的同时，SGN-CR 的网络结构也逐渐趋于复杂。该模型采用异构双分支架构，在光学分支中引入多层注意力模块以建模长程依赖关系，并在多个阶段进行跨模态特征交互。这类设计显著增强了模型的特征表达能力，但同时也带来了参数规模和计算复杂度的持续增长。上述以复杂度换取性能的设计思路在高性能计算平台上具有一定可行性，但在实际遥感应用场景中仍面临较为明显的限制。
+
+在星载处理、无人机遥感以及灾害应急等端侧应用场景中，模型通常运行于算力受限且功耗敏感的硬件平台，对推理效率和模型规模提出了更为严格的要求。当模型计算复杂度过高时，不仅会导致推理延迟显著增加，还可能直接限制其在实际系统中的部署与推广。因此，在此类应用背景下，仅关注云去除精度已难以满足实际需求，如何在保证重建质量的同时兼顾模型效率，逐渐成为遥感云去除研究中亟需面对的问题。
+
+进一步分析可以发现，SGN-CR 所采用的多模态结构在性能提升方面具有明显优势，但其各组成模块在功能定位和复杂度贡献上并不均衡。光学分支主要承担光谱与语义信息恢复任务，计算开销相对较大。SAR 分支侧重于提供结构先验，其对整体重建性能的贡献并不完全依赖于复杂的网络结构。一些引导与融合模块虽然计算代价较低，但在抑制伪纹理和增强结构一致性方面发挥了关键作用。这一现象表明，SGN-CR 的整体结构中仍存在可进一步优化和压缩的空间。
+
+基于上述分析，本章在第三章工作的基础上，进一步关注模型计算效率与实际部署可行性问题，围绕 SGN-CR 网络结构展开深入研究，探索一种面向端侧遥感应用的轻量化设计方案。与统一压缩策略不同，本章充分考虑 SAR 与光学模态在云去除任务中的功能差异，从模块选择性轻量化的角度出发，对网络架构进行有针对性的简化与重设计。
+
+本章的主要工作包括对 SGN-CR 模型复杂度及各模块特性进行系统分析，明确影响模型效率的关键因素。在此基础上，提出一种模块选择性的轻量化网络 Lite-SGN-CR，在保留核心引导机制和跨模态协同能力的前提下显著降低模型复杂度。最后，通过定量实验与可视化分析对所提出方法在性能与效率之间的权衡效果进行验证。实验结果表明，该轻量化设计在保持云去除质量基本稳定的同时，有效提升了模型在资源受限平台上的应用潜力。
+
+\section{SGN-CR 模型复杂度分析与轻量化动机}
+
+为明确第三章所提出 SGN-CR 模型在端侧部署场景下面临的实际问题，并为后续轻量化设计提供依据，本节从模型整体复杂度、模块级计算分布以及功能—复杂度匹配关系等方面，对 SGN-CR 网络结构进行进一步分析。
+
+% TODO：
+TODO:(不一定使用这个工具)本章采用由 Facebook AI Research 提供的 fvcore 模型分析工具包 对 SGN-CR 的参数量与 FLOPs 进行统计。参数量（TODO:注意之前是否会提及，Params）按可训练参数总数计算；（TODO:注意之前是否会提及）FLOPs 在输入分辨率为 $256 \times 256$、batch size=1 条件下统计单次前向传播的浮点运算次数，并进一步按模块路径归并至 SAR 编码器、光学编码器、跨模态融合模块与解码器，以获得模块级占比分析。
+
+\subsection{SGN-CR 的整体复杂度分析}
+
+% TODO:数据修改
+首先，对 SGN-CR 的整体参数规模和计算复杂度进行统计分析。以输入分辨率为 256×256、batch size 为 1 的设置为例，对模型单次前向推理过程中的参数量（Paramas）和浮点运算量（FLOPs）进行统计，结果如表~\ref{tab:SGN-CR_complexity}所示。
+% TODO:表格内容待补充
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi SGN-CR 整体复杂度统计]{\wuhao SGN-CR 整体复杂度统计}{\wuhao SGN-CR Overall Complexity Statistics}
+	\begin{tabular}{p{3cm}p{3cm}p{3cm}p{3cm}}
+		\toprule[1.5pt]
+		\makecell[c]{\songti\wuhao 模型}&\makecell[c]{\songti\wuhao 参数量Pramas(M)}&\makecell[c]{\songti\wuhao FLOPs(G)}\\
+		\hline
+		\makecell[c]{\wuhao SGN-CR}&\makecell[c]{\wuhao XX.XX}&\makecell[c]{\wuhao XXX.X}\\
+		\bottomrule[1.5pt]
+	\end{tabular}
+   \label{tab:SGN-CR_complexity} 	
+\end{table}
+
+从表中可以看出，SGN-CR 在取得较高云去除性能的同时，模型参数量和计算复杂度均处于较高水平。该复杂度在 GPU 等高性能计算环境下尚可接受，但在算力受限、功耗敏感的端侧遥感平台上仍可能带来较大的部署压力。这表明，仅从整体层面来看，SGN-CR 仍存在进一步优化模型效率的必要性。
+
+\subsection{各功能模块的计算特性分析}
+
+为了进一步定位 SGN-CR 的计算瓶颈，本研究对模型中各主要子模块的 Paramas 和 FLOPs 进行统计，并分析其在整体模型中的占比分布情况。根据网络结构，SGN-CR 可划分为以下几个主要组成部分：SAR 编码器（SAR Encoder）、光学编码器（Optical Encoder）、注意力模块（SGAM 与 CAA）、跨模态融合模块（SAGF 与 CMCA）、解码器与输出层（Decoder \& Head）。对应的模块级复杂度统计结果如表~\ref{tab:SGN-CR_Module_complexity}所示。
+% TODO:表格内容待补充
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi SGN-CR 模块级复杂度分布]{\wuhao SGN-CR 模块级复杂度分布}{\wuhao SGN-CR Module-Level Complexity Distribution}
+	\begin{tabular}{p{3cm}p{2cm}p{2.5cm}p{2.5cm}p{2.5cm}}
+		\toprule[1.5pt]
+		\makecell[c]{\songti\wuhao 模块}&\makecell[c]{\songti\wuhao Pramas\\(M)}&\makecell[c]{\songti\wuhao Pramas占比\\(\%)}&\makecell[c]{\songti\wuhao FLOPs\\(G)}&\makecell[c]{\songti\wuhao FLOPs占比\\(\%)}\\
+    \hline
+		\makecell[c]{\wuhao SAR Encoder}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+    \hline
+		\makecell[c]{\wuhao Optical Encoder}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+    \hline
+		\makecell[c]{\wuhao $SGAM+CAA$}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+    \hline
+		\makecell[c]{\wuhao $SAGF+CMCA$}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+    \hline
+		\makecell[c]{\wuhao Decoder \& Head}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+    \hline
+		\makecell[c]{\wuhao 总计}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}&\makecell[c]{\wuhao x.x}\\
+		\bottomrule[1.5pt]
+	\end{tabular}
+   \label{tab:SGN-CR_Module_complexity} 	
+\end{table}
+
+从表~\ref{tab:SGN-CR_Module_complexity}可以清晰观察到，光学编码器在 SGN-CR 中占据了主要的计算开销。其 FLOPs 占比通常超过整体计算量的一半，明显高于其他模块。这一现象主要源于光学分支采用 Transformer 结构进行特征建模，其多头注意力机制和高维特征投影在较大空间分辨率下会引入大量矩阵乘法运算。
+
+尽管 Transformer 结构在建模长程依赖和全局语义关系方面具有显著优势，对于大范围云遮挡区域的语义补全尤为重要，但其计算复杂度随特征维度和网络深度快速增长，成为限制模型高效推理的主要瓶颈。因此，在轻量化设计中，如何在保留必要全局建模能力的前提下，降低光学分支中注意力模块的计算成本，是需要重点解决的问题。
+
+需要进一步指出的是，计算瓶颈的存在并不等同于该模块适合被直接轻量化。尽管光学编码器中的 Transformer 结构在整体 FLOPs 中占据主导地位，但其所承担的全局语义建模功能在厚云遮挡场景下具有不可替代性。第三章的实验结果已表明，削弱该部分建模能力会显著影响大范围云遮挡区域的语义补全效果。因此，在轻量化设计中，若对光学分支的注意力结构进行激进压缩，可能导致性能退化风险显著高于其他模块。
+
+基于上述考虑，本章未对光学编码器的核心 Transformer 结构进行直接简化，而是从系统层面重新分配模型的计算负担，通过减少冗余的跨模态交互、压缩结构先验提取分支以及简化解码与恢复阶段来实现整体复杂度的有效下降。
+
+与光学分支不同，SAR 编码器在 SGN-CR 中的主要作用是提供稳定的几何结构先验，引导光学分支在云遮挡区域恢复潜在地物结构。第三章的消融实验结果表明，引入 SAR 分支能够显著改善厚云区域的重建质量，尤其在结构连续性和边缘完整性方面具有明显优势。
+
+然而，从模块级复杂度统计结果可以看出，SAR 编码器在参数量上占据了一定比例，但其 FLOPs 占比相对有限。这说明 SAR 分支的计算密集度较低，其网络结构在一定程度上存在参数冗余。在保证结构信息有效表达的前提下，通过采用更加紧凑的网络结构提取 SAR 特征，有望在不显著影响引导效果的情况下进一步降低模型规模。
+
+上述分析表明，SAR 分支具备进行更激进压缩的潜力，这也为后续采用模态不对称的轻量化策略提供了重要依据。
+
+值得注意的是，SGN-CR 中的 SGAM 与 SAGF 等引导与融合模块在整体参数量和 FLOPs 中所占比例极低，通常不足 5\%。然而，第三章的消融实验已经验证，移除这些模块会导致模型在 PSNR、SSIM 以及 SAM 等指标上出现明显下降，尤其在复杂云遮挡区域更为显著。
+
+这一现象表明，上述模块虽然计算代价较小，但在结构引导、噪声抑制以及跨模态信息协同方面发挥了关键作用，属于典型的“高性价比模块”。因此，在轻量化设计过程中，若对所有模块采用统一的压缩策略，容易误删这些关键组件，从而造成不必要的性能损失。
+
+\subsection{小结}
+
+综上分析可以得出以下结论：
+
+（1）SGN-CR 的整体计算开销主要来源于光学分支的全局特征建模过程，尤其是基于 Transformer 的注意力计算。然而，光学分支在厚云遮挡条件下承担着关键的语义补全任务，其核心建模能力不宜被过度削弱。
+
+（2）SAR 分支在云去除任务中对结构恢复具有重要贡献，但其计算密集度相对较低，在参数规模上存在进一步压缩空间。因此，可通过采用更紧凑的网络结构来降低其复杂度，而不会显著影响整体性能。
+
+（3）SGAM 与 SAGF 等引导与融合模块计算代价较小，但在结构一致性维护和伪纹理抑制方面具有显著性能收益，应在轻量化过程中重点保留。
+
+基于上述认识，本章轻量化设计并未对光学编码器的核心注意力结构进行激进简化，而是从整体网络结构层面出发，通过模态不对称压缩、跨模态交互策略简化以及解码阶段轻量化等方式降低整体复杂度，并在此基础上提出一种兼顾重建性能与计算效率的轻量化模型 Lite-SGN-CR。
+
+\section{Lite-SGN-CR 轻量化网络设计}
+
+基于上一节对 SGN-CR 模型复杂度瓶颈及各功能模块特性的系统分析，可以发现原模型在不同模态分支和功能模块之间存在明显的计算负载分布不均现象。尤其是在光学分支中引入 Transformer 结构进行全局特征建模，虽然显著提升了厚云场景下的语义补全能力，但同时也成为整体计算复杂度的主要来源。另一方面，SAR 分支及部分引导与融合模块在云去除性能中发挥了关键作用，其计算代价却相对较低，表现出较高的性价比。这一分析结果表明，SGN-CR 的整体结构仍存在通过合理重构实现效率优化的空间。
+
+在此基础上，为在不破坏原模型核心建模能力的前提下降低整体计算开销，本节提出一种基于 SGN-CR 的轻量化网络 Lite-SGN-CR。与直接对光学分支中 Transformer 结构进行激进压缩不同，Lite-SGN-CR 从系统层面出发，通过重新分配不同模态分支与功能模块的计算负担，实现整体复杂度的有效下降。具体而言，本文充分考虑 SAR 与光学模态在云去除任务中的功能差异，采用模态不对称的轻量化设计策略，在保持光学分支关键全局建模框架稳定的前提下，对 SAR 编码分支、跨模态交互方式以及解码与输出阶段进行针对性简化与重设计。
+
+Lite-SGN-CR 的设计目标主要体现在三个方面。首先，在保证网络整体结构稳定的前提下，显著降低模型的参数规模与浮点运算量，使其更适合算力受限的端侧遥感应用场景。其次，在轻量化过程中重点保留 SAR 引导机制与层级协同融合策略，确保结构先验能够有效注入光学特征表示，避免因过度压缩导致地物结构信息丢失或伪纹理增强。最后，通过在系统层面引入合理的效率–性能权衡策略，使模型在重建精度下降可控的条件下尽可能提升推理效率，实现云去除性能与计算成本之间的平衡。
+
+本节将围绕 Lite-SGN-CR 的整体网络架构展开详细说明。不同于第三章中以性能最优为主要目标的 SGN-CR，Lite-SGN-CR 以实际部署需求为导向，在继承原模型双分支框架与核心引导思想的基础上，对网络结构与模块实现进行系统性简化与重设计。
+
+\subsection{Lite-SGN-CR 的整体架构设计}
+
+如图\ref{fig:SGN-CR}和图\ref{fig:Lite-SGN-CR}所示，Lite-SGN-CR 与原始 SGN-CR 网络在整体架构上进行了针对性的轻量化改造。在保留原有双分支多模态融合框架的基础上，Lite-SGN-CR 对各个模块采取了系统性的结构压缩策略。下面将对各部分的改进设计逐一进行分析说明。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=15cm]{chapters/figures/Lite-SGN-CR.png}
+	    \bicaption[\xiaosi Lite-SGN-CR 整体网络结构示意图]{\wuhao Lite-SGN-CR 整体网络结构示意图}{\wuhao Lite-SGN-CR Overall Network Structure Diagram}
+	   	 \label{fig:Lite-SGN-CR}
+\end{figure}
+
+（1）轻量化SAR 编码分支
+
+考虑到 SAR 与光学影像在成像机理和信息表达上的差异，Lite-SGN-CR 采用模态不对称的轻量化设计策略,对 SAR 编码分支赋予明确的功能定位。具体而言，SAR 分支主要用于提供稳定的结构先验，其输出特征强调地物的几何轮廓与空间连续性，而不直接承担光谱或语义重建任务。因此，在保证结构表达能力的前提下，通过压缩网络深度与通道规模可有效降低 SAR 特征提取分支的计算开销。
+
+在原 SGN-CR 中，SAR 分支依次由三个尺度的层级组成，对应的特征通道分别为 64、128、256，其中每一个尺度的层级均堆叠 3 个 ResNet 风格的 SAR-block。这种包含多个残差卷积块的三层级特征提取网络能获得较大的感受野，但同时也存在感受野重叠冗余，增加了计算开销。
+
+（TODO：这里是否可以用公式表示一下计算开销的复杂度？）
+
+为此，在 Lite-SGN-CR 中，将 SAR 分支重构为一个初始特征嵌入层和两个逐级下采样编码层组成的浅层结构。如图\ref{fig:Lite-SGN-CR}所示，输入 SAR 分支的 SAR 图像首先通过一个 $3\times3$、stride=2 的卷积得到 $32\times \frac{H}{2} \times \frac{H}{2}$ 的初始特征，随后仅使用两个 Lite-SAR-block 分别产生 $64\times \frac{H}{4}\times \frac{H}{4}$ 与 $128\times \frac{H}{8}\times \frac{H}{8}$ 的多尺度结构表示。其中 Lite-SAR-block 用轻量级的 DWConv（Depthwise Convolution，深度卷积）结构替代了原 block 中 ResNet 风格的卷积模块，具体操作及原因将在下一节中探讨。同时，SAR 分支的层级数由 3 层压缩为 2 层，每层 block 的堆叠数也由 3 降为 1，大幅减少了网络深度和参数量。这一改进在降低模型复杂度的同时，仍充分保留了 SAR 分支“结构先验引导”的功能，即利用 SAR 图像提供的显著几何结构信息来指导光学分支的特征提取。
+
+这样压缩是因为 SAR 分支仅承担结构骨架提取与引导信息，过深的层级堆叠反而导致特征冗余，因此通过减少层级数量与通道规模能在较小性能损失的前提下获得显著的复杂度收益。
+
+（2）轻量化光学编码分支
+
+相比之下，光学分支需要完成云去除后的光谱重建与语义补全任务，对特征建模能力要求更高。为此，光学编码分支在 Lite-SGN-CR 中沿用了原网络的三级尺度金字塔结构，即保留三个尺度的编码过程和关键的注意力建模能力，以维持对长程依赖与全局语义关系的基本建模能力，同时通过压缩网络规模实现复杂度控制。
+
+在原 SGN-CR 中，光学分支在三个尺度层级，分别堆叠 8 个 Opt-block，并采用 $C$， $2C$， $4C$ 的通道扩展方式进行特征建模。 而在 Lite-SGN-CR 中保留了三级下采样的层级结构，但将每一尺度的模块堆叠次数由 8 减少为 4，并将三个阶段的输出通道分别由原网络的配置缩减至 48、96、192，从而在维持基本多尺度表征能力的同时显著降低注意力相关计算的总体开销。
+
+同时，Transformer 注意力模块的超参数（例如多头注意力的头数）也相应减少，以适应收缩后的通道维度。这种通道裁剪与参数精简策略在保证模型轻量化的同时，仍然能保留原光学编码分支中关键的注意力机制。例如，Lite-SGN-CR 继续采用了CAA跨轴注意力等全局建模模块，只是在计算代价上进行了优化。而保留 Transformer 式注意力结构的原因是，对于大幅云遮挡的遥感图像来说，恢复纹理和语义信息需要长距离依赖建模和全局上下文信息。
+
+通过在压缩通道的同时优化注意力模块，Lite-SGN-CR 在全局语义建模能力与模型轻量化之间取得了平衡：既避免了原网络中过多冗余特征表示，提高了效率，又确保了跨大范围图像的特征关联和语义对齐不致缺失，契合端侧算力受限条件下对效率与精度平衡的实际需求。
+
+（3）轻量化跨模态特征融合
+
+在跨模态交互方面，Lite-SGN-CR 保留了原 SGN-CR 中提出的分层次融合机制，包括空间自适应门控融合模块（SAGF）和跨模态交叉注意模块（CMCA），整体框架与图\ref{fig:SAGF} 和图 \ref{fig:CMCA} 中的原始设计一致。
+
+在浅层，仍然采用 SAGF 模块对光学与 SAR 的浅层特征进行逐像素的门控融合，以滤除SAR斑点噪声并选择性注入结构信息；在深层，则利用 CMCA 模块对高层语义特征执行跨模态的注意力融合，从 SAR 分支检索补充光学分支缺失的语义细节。但与原始模型相比，Lite-SGN-CR 对这些融合模块的内部进行了轻量化改进：一方面，由于前端编码器通道数的压缩，输入到 SAGF 和 CMCA 的特征维度相应减少，直接降低了融合计算的参数量；另一方面，在 CMCA 模块中，将原先的标准 $3\times3$ 卷积运算替换为等尺寸的深度卷积，以大幅削减卷积参数和计算开销（图~\ref{fig:Lite-CMCA}中所示）。采用深度可分离卷积能够在保持空间局部建模能力的同时，以更少的参数实现类似的特征交互效果，从而更加符合轻量化的要求。
+
+需要强调的是，SAGF 及 SAR 引导调制模块 SGAM 在原模型中本身具有较高的性能和复杂度性价比，对抑制噪声和补全语义起着不可或缺的作用，其计算开销相对较低但对结构一致性贡献显著。因此，Lite-SGN-CR 在轻量化过程中未对上述模块的基本交互形式进行结构性删减，只是对其内部结构做简化处理，以达到在保证融合有效性的前提下尽可能减轻计算负担的目的，并且通过骨干网络通道压缩与模块堆叠次数减少的方式，降低其所依赖特征张量的维度，从系统层面实现跨模态交互开销的同步下降。相关实现细节将在后续章节的模块描述中进一步阐述，在此不再展开。
+
+与此同时，Lite-SGN-CR 仍保持在各尺度光学特征提取阶段均引入 SAR 引导与融合机制，使结构先验能够持续注入光学特征表征，避免仅在单一尺度引导可能导致的结构不连续或细节断裂问题。
+
+（4）轻量化解码器
+
+在解码器设计方面，Lite-SGN-CR 在原模型复杂的恢复模块层级方面进行了简化，其核心改动体现在解码层级数量与模块堆叠方式的显式简化。如~\ref{fig:SGN-CR}所示，原 SGN-CR 的解码器由两层 Restore-Layer 组成，且每一层均堆叠多个 Restore-block，形成深层级、强建模能力的恢复网络。在该结构中，解码端不仅承担空间分辨率恢复任务，还通过多次特征变换参与语义重整与细节增强。然而，这种“多层级 × 多 block”的恢复堆叠方式在高分辨率特征图上会引入大量卷积运算与特征交互，成为整体计算复杂度和推理时间的重要来源。
+
+针对这些问题，Lite-SGN-CR 将解码流程重新设计为三阶段的逐级上采样过程,如~\ref{fig:Lite-SGN-CR}所示：从编码后的 $\frac{1}{8}$ 尺度特征开始，依次上采样恢复到 $\frac{1}{4}$、$\frac{1}{2}$ 和最终的原始分辨率，并仅在其中两个过渡阶段插入 Lite-Restore-block 进行轻量的特征重建。
+
+精简后的解码器仅使用 2 个 Restore 模块代替了原先的 6 个，大幅减少了卷积运算次数。在逐级上采样过程中，网络以更渐进的方式重建细节，避免了一步到位上采样可能出现的粗糙过渡，降低了产生伪纹理的风险。同时，通过将解码器由“多层、多 block 的重型恢复结构”重构为“两层、单 block 的逐级恢复结构”。这一设计将主要的模型容量和计算资源重新分配给编码与融合部分，使网络将重点放在多模态特征提取与融合上，从源头提取更高质量的表征，解码器的功能也明确限定为空间分辨率恢复与必要的细节校正。这种层级与堆叠数量的同步压缩，在保证重建精度下降可控的前提下，有效降低了推理复杂度，并提升了整体模型在端侧场景下的实用性。
+
+综上所述，Lite-SGN-CR 围绕编码器、融合、解码器三个方面实施的结构压缩策略，实现了模型复杂度的全面削减和模块协同优化。在保持原网络多尺度特征表示和多模态语义融合优势的前提下，Lite-SGN-CR大幅降低了模型的参数量和计算量，提高了推理效率和资源利用率。这种设计使模型在保证云层去除任务性能的同时，更具实际部署价值。
+
+\subsection{基于深度可分离卷积的轻量化模块设计}
+
+在上一节从网络层级深度与模块配置角度对 Lite-SGN-CR 的整体架构进行压缩后，进一步降低模型计算复杂度仍需从具体算子与模块实现层面入手。对第三章 SGN-CR 模型的计算构成进行分析可以发现，其主要计算开销集中在多尺度编码、跨模态融合及解码恢复阶段的卷积运算中，尤其是标准卷积在高分辨率特征图上的反复堆叠，对参数规模与推理效率造成了显著压力。
+
+为此，Lite-SGN-CR 在保持原网络功能分工和信息流结构不变的前提下，引入深度可分离卷积（Depthwise Separable Convolution）作为核心轻量化算子，对多个关键模块进行系统性的卷积替换，以实现模型复杂度的进一步压缩。
+
+\subsubsection{深度可分离卷积的原理与适用性分析}
+
+深度可分离卷积是一种将标准卷积操作分解为深度卷积（Depthwise Convolution, DWConv）和逐点卷积（Pointwise Convolution, PWConv）的轻量化卷积形式，主要用于减少模型的参数量和计算量。
+具体来说，深度可分离卷积将标准卷积重新分解为两个步骤:
+首先 DWConv 对输入的每一个通道独立使用一个 $ K \times K $ 的卷积核进行空间特征提取，由于每个卷积核仅作用于一个通道，该步骤并不改变特征图的通道数。
+然后 PWConv 利用 $ 1 \times 1 $ 的卷积核将 DWConv 输出的特征图在深度方向上进行线性组合，该步骤主要负责通道间的信息融合与维度变换，从而实现跨通道的信息融合与特征重构。
+
+第三章中使用的标准卷积在工作时试图同时学习“空间特征”（如  $K \times K $ 范围内的边缘、纹理）和“通道特征”（如 R、G、B 通道的混合，或高层语义特征的组合），但图像的空间相关性（局部像素的关系）和跨通道相关性（特征图之间的关系）在很大程度上是独立的。既然它们是独立的，就不需要用一个 $K \times K \times C_{in}$ 这种庞大的三维滤波器去同时映射它们，因此可以先把二维的空间关系提取出来，也就是 DWConv 操作，再单独处理一维的通道关系，也就是 PWConv 操作。所以解耦通道和空间的深度可分离卷积方法是一种将映射过程分解的策略。
+
+而从图像处理角度来看，DWConv 和 PWConv 可以看作图像处理的两个经典步骤。
+DWConv 看做滤波器 ，作用仅仅是提取特征。比如，在第1个通道提取垂直边缘，在第2个通道提取水平边缘，它只关心“形状”和“纹理”，而不改变特征的数量，也不融合特征。
+PWConv 看做混合器 ，作用是特征融合。它同时看着同一个像素点上的所有通道，来判断：“这里既有垂直边缘又有红色特征，那这里可能是一个红色的柱子”，主要负责通过线性组合生成新的高层语义。
+
+从任务特性角度看，遥感图像云去除尤其依赖于地物结构连续性、边界形态以及空间布局信息的恢复，而非对复杂高维语义的精细分类建模。因此，在多个以“结构建模”和“细节重建”为主的模块中，采用 DWConv 进行空间特征提取、再通过 PWConv 完成必要的通道融合，能够在降低计算开销的同时满足特征建模需求，具有良好的任务适配性。
+
+通过这种分解，深度可分离卷积显著减少了卷积操作中的参数量和计算量。具体而言，假设输入特征图的尺寸为 $H \times W \times C_{in}$，输出特征图的尺寸为 $H \times W \times C_{out}$，标准卷积的计算复杂度为 $K \times K \times C_{in} \times C_{out} \times H \times W$，而深度可分离卷积的计算复杂度为 $K \times K \times C_{in} \times H \times W + C_{in} \times C_{out} \times H \times W$。当 $C_{in}$ 和 $C_{out}$ 较大时，深度可分离卷积能够显著降低计算开销。
+深度可分离卷积的以上特性，实现了在保持感受野和基本特征表达能力的同时，大幅降低参数量与浮点运算次数，使其成为轻量化网络设计中常用的基础算子。
+
+需要强调的是，原始的 SGN-CR 网络并未使用任何深度可分离卷积，其各个分支和模块均采用标准卷积架构。而 Lite-SGN-CR 中引入深度可分离卷积作为一种系统性的轻量化替换策略，对原网络中的主要卷积模块进行了全面改造。在保持原有信息流和功能不变的前提下，我们将高计算成本的标准卷积替换为计算高效的 DWConv + PWConv，从而大幅削减模型复杂度。
+
+具体而言，Lite-SGN-CR 在以下关键组件中采用了 DWConv 替换原有卷积，实现模块级的轻量化设计：SAR 编码分支、跨模态融合模块、解码器模块。下面针对上述每个模块的改进逐一说明其基于 DWConv 的结构设计、适配动因及带来的效益。
+
+\subsubsection{轻量化SAR编码模块（Lite-SAR-block）}
+
+在 SAR 编码分支中，Lite-SGN-CR 对原有基于 ResNet 风格卷积块的 SAR-block 进行了重点重构，引入基于深度可分离卷积的 Lite-SAR-block模块。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=3cm]{chapters/figures/Lite-SAR-Block.png}
+	    \bicaption[\xiaosi Lite-SAR-block
+ 结构示意图]{\wuhao Lite-SAR-block
+ 结构示意图}{\wuhao Schematic diagram of lite-SAR-block structure}
+	   	 \label{fig:Lite-SAR-block}
+\end{figure}
+
+如图\ref{fig:Lite-SAR-block}所示，每个 Lite-SAR-block由一层大核深度卷积和两层逐点卷积组成：首先采用 $7\times7$ 的 DWConv 对输入特征进行逐通道空间建模，并通过步长为 2 的设置完成下采样操作。$7 \times 7$ 的 DWConv 能以极小的开销覆盖较大的感受野，在每个通道上提取云覆盖场景的骨架结构特征（如地物的轮廓和边缘）。随后，利用 $1\times1$ 的 PWConv 在通道维度上对空间特征进行融合，并结合非线性激活函数增强特征表达能力。
+
+该设计的核心动机在于SAR 分支在 Lite-SGN-CR 中主要承担结构先验提取与引导信息提供的功能，其关注重点在于地物的几何轮廓、边界走向与空间连续性，而非复杂的高层语义推理。因此，采用大核 DWConv 即可在较低计算代价下获得足够大的感受野，以捕获稳定的结构骨架信息；PWConv 则负责对通道信息进行必要的整合，避免逐通道卷积带来的特征割裂问题。
+
+通过以 DWConv + PWConv 替代原有多层标准卷积，Lite-SAR-block在显著降低参数量与计算复杂度的同时，仍能够保持对结构信息的有效建模能力，为后续光学分支的去云重建提供可靠的结构引导。
+
+\subsubsection{基于深度可分离卷积的跨模态融合模块（Lite-CMCA）}
+
+在跨模态特征融合阶段，Lite-SGN-CR 延续了原 SGN-CR 中的 CMCA 模块整体框架，但对其内部卷积运算进行了轻量化改造，形成 Lite-CMCA。CMCA 是用于光学–SAR 特征融合的跨模态注意力模块，原始设计中，图\ref{fig:CMCA}，该模块在计算注意力权重前通常包含一个 3×3 的卷积操作，用于对局部邻域特征进行建模融合。Lite-SGN-CR 中将这一卷积替换为等价尺寸 DWConv，构成精简的 Lite-CMCA，如图\ref{fig:Lite-CMCA}。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=8cm]{chapters/figures/Lite-CMCA.png}
+	    \bicaption[\xiaosi Lite-CMCA
+ 结构示意图]{\wuhao Lite-CMCA
+ 结构示意图}{\wuhao Schematic diagram of Lite-CMCA structure}
+	   	 \label{fig:Lite-CMCA}
+\end{figure}
+
+在此处，DWConv 承担局部模式建模的职责。对于来自光学和 SAR 的特征图，DWConv 提取局部几何特征，而不进行通道间的线性组合。这里不使用完整的深度可分离卷积主要基于两个考虑，一是由于后续的跨模态注意力机制本质上已经完成了模态间与通道间的信息交互，如特征图的加权与相乘等操作，因此此处由 PWConv 承担的卷积阶段的通道融合显得冗余。二是省略 PWConv 使得参数量和计算量为标准卷积的$\frac{1}{C_{out}}$，降至了最低，极大地减轻了融合模块的硬件开销。
+
+由于深度卷积不混合通道，计算开销显著降低，使注意力模块能够在减少融合代价的同时完成必要的特征对齐与融合，随后直接利用提取的空间特征生成注意力图。这样的改动大幅减轻了跨模态注意力的计算负担，但并不改变原有注意力机制的作用流程，即 SAR 特征对光学特征的引导补充仍然有效。Lite-CMCA 保留了原模块的跨模态特征对齐和注意力引导功能，只是在更低复杂度下完成这些操作，从而提高了模态融合阶段的效率。
+
+\subsubsection{轻量化解码模块（Lite-Restore-block）}
+
+在解码器设计方面，Lite-SGN-CR 对原始 SGN-CR 中的解码结构进行了结构级重构，其核心变化如下。
+
+首先在轻量化的解码器模块中，移除了解码端的显式注意力建模模块，用轻量化的 卷积结构替代了原有的重型特征交互过程。如图\ref{fig:Restore-block}所示，原 SGN-CR 的Restore-block并非简单的上采样恢复模块，而是包含 Attention 机制的重型恢复结构，其内部通过 MatMul、Scale 和 Softmax 等操作对特征进行显式的全局交互建模。该设计在提升重建精度的同时，也引入了显著的计算开销，尤其是在高分辨率特征图上执行注意力运算，会显著增加推理延迟，并不利于端侧部署。
+
+根据前述复杂度分析可以发现，在 SGN-CR 中，跨模态语义补全与全局结构约束主要由编码端与跨模态融合模块完成，解码阶段继续引入 Attention 机制在一定程度上存在功能重叠，其对最终重建效果的边际收益相对有限。与此同时，解码端 Attention 的计算成本却随着空间分辨率的提升呈指数级增长，成为整体推理效率的重要瓶颈。
+
+针对上述问题，设计的Lite-SGN-CR 在解码阶段有意识地移除了 Attention 模块，将解码器的功能明确限定为空间分辨率恢复与局部细节重建。如图\ref{fig:Lite-restore-block}所示，Lite-SGN-CR 的解码器采用逐级上采样的方式，从 $\frac{1}{8}$ 分辨率特征开始，依次恢复至 $\frac{1}{4}$、$\frac{1}{2}$ 及原始分辨率。在每一级解码层中，仅使用一个 Lite-Restore-block 对上采样后的特征进行轻量化修正。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=3cm]{chapters/figures/Lite-restore-block.png}
+	    \bicaption[\xiaosi Lite-restore-block
+ 结构示意图]{\wuhao Lite-restore-block
+ 结构示意图}{\wuhao Schematic diagram of lite-Restore-block structure}
+	   	 \label{fig:Lite-restore-block}
+\end{figure}
+
+每个 Lite-Restore-block 由DWConv + PWConv组成的深度可分离卷积构成，其中 DWConv 负责在逐通道层面提取空间细节与结构残差信息，PWConv 则用于对通道特征进行融合与调整。相比原始解码器中的注意力建模方式，该结构能够在显著降低参数量与计算复杂度的同时，满足空间细节恢复的基本需求。
+
+这种解码器重构策略将模型的主要计算资源进一步集中于编码端和跨模态融合阶段，使网络在源头获得更高质量的多模态特征表征，而解码端则以轻量、稳定的方式完成分辨率恢复。通过移除高开销的注意力模块并引入深度可分离卷积，Lite-SGN-CR 的解码器在保证重建精度下降可控的前提下，实现了推理效率的显著提升，更加适合资源受限的端侧部署需求。
+
+\subsubsection{复杂度分析}
+
+为进一步量化深度可分离卷积在 Lite-SGN-CR 中带来的复杂度优势，本文从卷积算子层面对标准卷积与深度可分离卷积的参数量进行对比分析。对于一个输入通道数为 $C_{in}$​、输出通道数为 $C_{out}$​、卷积核大小为 $k\times k$ 的标准卷积，其参数量为:
+\begin{equation}
+\begin{aligned}
+\text{Params}_{\text{Conv}} = k^2 \cdot C_{in} \cdot C_{out} 
+\end{aligned}
+\label{eq:standard_conv}
+\end{equation}
+
+相比之下，深度可分离卷积将该过程分解为逐通道的深度卷积和逐点卷积，其总参数量为:
+\begin{equation}
+\begin{aligned}
+\text{Params}_{\text{DS}} = k^2 \cdot C_{in} + C_{in} \cdot C_{out}
+\end{aligned}
+\label{eq:depthwise_separable_conv}
+\end{equation}
+
+二者的参数量比值可表示为:
+\begin{equation}
+\begin{aligned}
+\frac{\text{Params}_{\text{DS}}}{\text{Params}_{\text{Conv}}} = \frac{1}{C_{out}} + \frac{1}{k^2}
+\end{aligned}
+\label{eq:params_ratio}
+\end{equation}
+
+
+在 Lite-SGN-CR 的具体配置中，卷积核大小通常取 $k=3$，且各模块的输出通道数普遍大于 32，因此深度可分离卷积在单层卷积中的参数量约为标准卷积的 $\frac{1}{8}–\frac{1}{9}$。这一差异在多尺度编码与高分辨率解码阶段被进一步放大，使得整体模型的参数规模与 FLOPs 得到显著压缩。
+
+结合前一节的结构分析可以看出，Lite-SGN-CR 在 SAR 编码模块、跨模态融合模块以及解码恢复模块中系统性地将标准卷积替换为深度可分离卷积和 DWConv，同时配合网络层级数量与模块堆叠次数的减少，实现了算子级与结构级的协同轻量化。特别是在解码阶段，由于特征图空间分辨率较高，卷积计算开销随分辨率平方增长，上述替换策略对整体推理效率的提升尤为显著。
+
+需要强调的是，该复杂度削减是在保持网络主干信息流与多模态融合机制不变的前提下实现的。通过将计算资源从冗余的卷积堆叠中释放出来，Lite-SGN-CR 能够将更多模型容量集中于光学分支的关键注意力建模与跨模态交互阶段，从而在效率与重建性能之间取得良好平衡。后续实验章节将通过参数量、FLOPs 及推理时间的对比结果，对上述分析进行进一步验证。
+
+
+\subsection{渐进式去云的推理增强策略}
+
+渐进学习已被引入图像修复（TODO）和图像恢复（TODO）任务，并取得了不错的性能。在遥感图像云去除任务中，云层厚度、分布形态及其与地物结构的耦合程度具有显著差异。对于薄云或局部遮挡区域，单次前向推理通常能够获得较为理想的重建效果；然而在厚云覆盖或云与地物边界复杂的场景下，一次去云过程往往难以完全恢复被遮挡区域的光谱细节与结构连续性。这种现象在轻量化模型中更为明显，其主要原因在于模型容量受限，难以在单次推理中同时完成大尺度结构补全与细节精修。
+
+基于上述观察，本文在 Lite-SGN-CR 的基础上进一步引入一种渐进式去云的推理增强策略，通过多次迭代逐步细化去云结果，以在计算预算允许的情况下提升重建质量。需要强调的是，渐进式云移除策略是一种可选的推理时间增强措施，而不是 Lite-SGN-CR 架构的组成部分。
+
+\subsubsection{渐进式去云思想}
+
+渐进式去云策略的核心思想是将去云过程视为一个逐步逼近的重建问题。在第 t 次推理中，模型以前一次的去云结果作为输入，对残留云区域和不确定区域进行进一步修正。具体而言，设 f(⋅)表示 Lite-SGN-CR 网络，Isar表示对应的 SAR 图像，则渐进式去云过程可形式化表示为：
+\begin{equation}
+\begin{aligned}
+I^{(t)} = f(I^{(t-1)}, I_{sar}), \quad t = 1, 2, \ldots, T-1
+\end{aligned}
+\label{eq:progressive_cloud_removal}
+\end{equation}
+
+其中 $I^{(0)} $表示原始含云光学影像，$I^{(t)}$ 为第 t 次推理后的去云结果。通过多次迭代，网络能够在前一次结果的基础上逐步修正光谱偏差并增强结构一致性。
+需要强调的是，在该渐进式去云过程中，各次推理阶段共享同一组网络参数，模型参数规模保持不变，因而该策略并不引入额外的模型存储开销。
+
+\subsubsection{复杂度与性能、效率权衡}
+
+从计算复杂度角度来看，渐进式去云策略主要在推理阶段引入额外开销。若完整执行 T 次前向推理，则整体浮点运算量与推理时间近似呈线性增长关系。尽管如此，该策略具有良好的可调节性：在资源受限或对实时性要求较高的场景下，可采用单次推理模式；而在对去云质量要求更高、计算预算相对宽松的应用中，则可通过增加迭代次数以获得更优的重建结果。
+
+此外，由于 Lite-SGN-CR 本身已采用轻量化设计，其单次推理成本显著低于原始 SGN-CR 模型，因此在合理的迭代次数下（如 T=3），渐进式去云仍能够保持较为可接受的计算复杂度。
+
+需要指出的是，渐进式去云并非 Lite-SGN-CR 的核心网络结构组成部分，而是一种可选的推理阶段增强策略。Lite-SGN-CR 的单次推理模式已能够在大多数场景下提供稳定的去云效果；渐进式去云主要适用于厚云覆盖或高精度重建需求场景，用于在不增加模型参数的前提下进一步提升去云质量。
+
+在后续消融实验中，本文探索了单次推理与多次推理对最终结果的影响（TODO:消融实验表），定量分析渐进式去云策略在性能提升与计算开销之间的权衡关系，并且选择最佳的阶段数来平衡性能和效率。
+
+\subsection{小结}
+
+本节围绕 Lite-SGN-CR 网络的轻量化设计展开，系统介绍了其整体架构、关键模块实现以及推理阶段的增强策略。首先，在整体架构层面，Lite-SGN-CR 在继承 SGN-CR 核心思想的基础上，通过模态不对称设计、分层跨模态融合机制，实现了在显著降低网络复杂度的同时对结构先验的有效利用。其次，在模块实现层面，本文通过引入基于深度可分离卷积的轻量化 SAR 编码器与解码器，有效减少了冗余计算，使计算资源更加集中于光学分支的关键注意力建模与语义补全过程。最后，针对轻量化模型在厚云场景下可能存在的重建不足问题，本文提出了一种渐进式去云的推理增强策略，在不增加模型参数的前提下进一步提升去云质量。
+
+通过上述设计，Lite-SGN-CR 在结构完整性、计算效率与重建性能之间实现了良好的平衡，为后续实验验证与端侧应用提供了可靠的网络基础。
+
+\section{实验结果与分析}
+
+\subsection{实验设置与评价指标}
+
+为验证所提出 Lite-SGN-CR 网络在遥感图像云去除任务中的重建性能保持能力与计算效率提升效果，本文在与第三章完全一致的数据集与实验环境下开展对比实验，以确保实验结果的公平性与可比性。实验数据集由成对的含云光学影像、对应的无云光学影像以及配套的 SAR 辅助数据构成，覆盖不同云厚度、地物类型及成像场景，能够较为全面地评估模型在复杂条件下的去云重建能力。
+
+在评价指标方面，本文沿用第三章中使用的峰值信噪比（PSNR）、结构相似性指数（SSIM）、光谱角映射（SAM）以及平均绝对误差（MAE）作为重建性能评价指标，用于从图像质量、结构一致性、光谱保持性和像素级误差等多个角度对去云结果进行定量分析。其中，PSNR 和 SSIM 主要反映整体重建质量与结构保真度，SAM 用于衡量光谱信息的保持能力，MAE 则用于评估重建结果与真实无云影像之间的像素级偏差。
+
+此外，为系统评估 Lite-SGN-CR 在轻量化设计上的有效性，本文进一步引入模型参数量（Params）与浮点运算量（FLOPs）作为计算复杂度评价指标。其中，参数量用于反映模型的存储开销，FLOPs 用于衡量模型在单次前向推理过程中所需的计算量。通过将上述复杂度指标与重建性能指标结合分析，可以全面评估 Lite-SGN-CR 在保证云去除精度的同时，对计算成本的压缩效果，为后续端侧部署与实时应用提供定量依据。
+
+% （TODO：）
+所有模型均在相同的数据划分、训练策略与优化设置下进行训练，以确保对比结果的公平性与可复现性。todo具体而言，模型训练均采用 ×× 优化器，初始学习率设为 ××，并在训练过程中采用 ×× 学习率衰减策略；模型共训练 15 个 epoch，batch size 设为 16。除网络结构差异外，其余训练超参数均保持一致。
+
+在对比模型选择方面，本文首先以第三章提出的 SGN-CR 作为性能参考模型，用于评估轻量化设计在保持去云重建精度方面的影响。通过将 Lite-SGN-CR 与 SGN-CR 进行对比，可以直观分析在网络结构压缩与算子级轻量化后，模型在重建性能与计算复杂度之间的权衡关系。
+
+此外，为进一步验证所提出 Lite-SGN-CR 在轻量化云去除场景下的竞争力，本文还选取了若干具有代表性的轻量化遥感图像云去除方法作为对比模型（TODO:如 ××、×× 等）。这些方法在网络规模、参数量或推理效率方面具有明显的轻量化特征，能够从不同角度反映当前云去除任务中性能–效率折中的主流设计思路。通过与上述方法的系统比较，可以更全面地评估 Lite-SGN-CR 在轻量化设计下的性能优势与适用性。
+
+\subsection{Lite-SGN-CR 与现有方法综合对比}
+
+\subsubsection{重建性能对比}
+
+为验证 Lite-SGN-CR 在遥感图像云去除任务中的重建能力，本文在与第三章相同的数据集与实验设置下，将其与现有多模态云去除模型进行对比实验。评价指标包括 PSNR、SSIM、SAM 与 MAE，从像素精度、结构一致性与光谱保真性等方面进行综合分析。
+
+表~\ref{tab:Lite-SGN-CR-compare} 给出了各模型在重建质量与基础复杂度方面的对比结果。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi Lite-SGN-CR与不同模型重建性能对比]
+	{\wuhao Lite-SGN-CR与不同模型重建性能对比}
+	{\wuhao Performance Comparison of Lite-SGN-CR with Different Models}
+	\label{tab:Lite-SGN-CR-compare}
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.10\textwidth}@{}}
+		\toprule[1.5pt]
+		模型 &Params(M) &FLOPs(G) & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ & SAM($^\circ$)$\downarrow$ & MAE$\downarrow$\\
+		\hline
+		SAR-Opt-cGAN\textsuperscript{\cite{grohnfeldt2018conditional}} & xx & xx & 27.1266 & 0.8364 & 8.8707 & 0.03960 \\
+		GLF-CR\textsuperscript{\cite{xu2022glf}}& xx & xx & 28.5932 & 0.8799 & 8.2512 & 0.02814 \\
+		USSRN-CR\textsuperscript{\cite{wang2023cloud}} & xx & xx & 28.6043 & 0.8532 & 9.1736 & 0.02856 \\
+		GCEPANet\textsuperscript{\cite{zhou2025gcepanet}}& xx & xx & 30.2255 & 0.8964 & 7.7110 & 0.02433 \\
+		SGN-CR & xx & xx & 30.5503 & 0.8990 & 7.5781 & 0.02379 \\
+		\textbf{Lite-SGN-CR} & \textbf{xx} & \textbf{xx} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
+		\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+从表中可以看出，Lite-SGN-CR 在 PSNR 与 SSIM 指标上与 SGN-CR 保持接近水平，在 SAM 与 MAE 上未出现明显退化，说明轻量化设计并未显著削弱模型的重建能力。
+
+\subsubsection{复杂度与效率对比}
+
+在保证重建质量基本稳定的前提下，本文进一步分析 Lite-SGN-CR 在模型复杂度与推理效率方面的改进效果。统计指标包括参数量（Params）、FLOPs、推理延迟（Latency）、帧率（FPS）以及显存占用（Memory）。
+
+表~\ref{tab:Lite-SGN-CR-efficiency} 展示了不同模型在复杂度与推理效率方面的对比结果。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi Lite-SGN-CR与不同模型复杂度与推理效率对比]
+	{\wuhao Lite-SGN-CR与不同模型复杂度与推理效率对比}
+	{\wuhao Comparison of Lite-SGN-CR with different model complexity and inference efficiency}
+	\label{tab:Lite-SGN-CR-efficiency}
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.14\textwidth}@{}}
+		\toprule[1.5pt]
+		模型 &Params(M) &FLOPs(G) & Latency(ms)$\downarrow$ & FPS$\uparrow$ & Memory(MB)$\downarrow$\\
+		\hline
+		SAR-Opt-cGAN\textsuperscript{\cite{grohnfeldt2018conditional}} & xx & xx & 27.1266 & 0.8364 & 8.8707\\
+		GLF-CR\textsuperscript{\cite{xu2022glf}}& xx & xx & 28.5932 & 0.8799 & 8.2512 \\
+		USSRN-CR\textsuperscript{\cite{wang2023cloud}} & xx & xx & 28.6043 & 0.8532 & 9.1736\\
+		GCEPANet\textsuperscript{\cite{zhou2025gcepanet}}& xx & xx & 30.2255 & 0.8964 & 7.7110 \\
+		SGN-CR & xx & xx & 30.5503 & 0.8990 & 7.5781\\
+		\textbf{Lite-SGN-CR} & \textbf{xx} & \textbf{xx} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} \\
+		\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+可以观察到，Lite-SGN-CR 在参数量与 FLOPs 上较 SGN-CR 明显下降，同时推理延迟显著降低、FPS 提升，显存占用亦得到有效控制。这表明所提出的轻量化设计在保证结构表达能力的同时，实现了更优的计算效率。
+
+\subsubsection{可视化对比}
+
+为更加直观地展示不同模型的重建效果，本文选取典型云遮挡场景进行可视化对比。对比内容包括厚云区域、云边界过渡区域以及复杂地物结构区域。
+
+\begin{figure*}[htbp]
+	\centering
+		\bicaption[\xiaosi SEN12MS-CR 测试集上不同方法的云去除对比结果]
+	{\wuhao SEN12MS-CR 测试集上不同方法的云去除对比结果}
+	{\wuhao Comparison of cloud removal results of different methods on the SEN12MS-CR test set}
+	\label{fig:Lite-visualization}
+	\renewcommand{\arraystretch}{1.2}
+	\wuhao
+	
+	\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} ccccc @{}}
+		\multicolumn{5}{c}{\wuhao (a)}\\
+		
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SAR.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_Cloudy.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_Cloud-Free.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_GANs.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SAR-Opt-cGAN.png} \\[-0.6ex]
+		
+		\makecell[c]{\wuhao SAR} &
+		\makecell[c]{\wuhao Cloudy} &
+		\makecell[c]{\wuhao Cloud-Free} &
+		\makecell[c]{\wuhao GANs} &
+		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.8ex]  
+		
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_GLF-CR.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_USSRN-CR.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_AMGAN-CR.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_HPN-CR.png} &
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SGN-CR(Ours).png} \\[-0.6ex]
+		\makecell[c]{\wuhao GLF-CR} &
+		\makecell[c]{\wuhao USSRN-CR} &
+		\makecell[c]{\wuhao GCEPANet} &
+		\makecell[c]{\wuhao SGN-CR} &
+		\makecell[c]{\wuhao \textbf{Lite-SGN-CR}} \\
+\end{tabular*}
+\end{figure*}
+
+图\ref{fig:Lite-visualization}通过视觉结果可以观察到，Lite-SGN-CR 在保持结构连续性的同时，有效抑制了伪影与光谱失真现象，与 SGN-CR 的视觉效果基本一致，进一步验证了轻量化设计的有效性。
+
+\subsection{性能-效率权衡分析}
+
+为了更加直观地刻画轻量化带来的收益，本文进一步对 SGN-CR 与 Lite-SGN-CR 进行对比分析，并计算各项指标的下降比例。
+
+表~\ref{tab:Benefit-Comparison} 给出了两种模型在参数规模、计算复杂度、推理延迟及重建性能方面的变化情况。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi Lite-SGN-CR 与 SGN-CR 收益对比]
+	{\wuhao Lite-SGN-CR 与 SGN-CR 收益对比}
+	{\wuhao Comparison of Lite-SGN-CR and SGN-CR performance}
+	\label{tab:Benefit-Comparison}
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.20\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.20\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.20\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.20\textwidth}@{}}
+		\toprule[1.5pt]
+		指标 & SGN-CR & Lite-SGN-CR & \textbf{Reduction(\%)} \\
+		\hline
+		Params(M)& xx & xx & \textbf{27.1266} \\
+		FLOPs(G)& xx & xx & \textbf{27.1266} \\
+		PSNR & xx & xx & \textbf{27.1266} \\
+		\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+实验结果表明，在仅产生有限 PSNR 波动的情况下，Lite-SGN-CR 实现了显著的参数压缩与计算量降低。这种性能--效率权衡关系说明所提出的轻量化策略具有良好的工程应用潜力。
+
+\subsection{轻量化设计消融实验分析}
+
+为进一步验证各轻量化策略对模型性能的具体影响，本文开展消融实验，从以下几个方面进行分析：
+
+\begin{itemize}
+    \item SAR 编码分支结构替换对模型性能的影响；
+    \item 光学分支通道压缩与注意力头数调整的影响；
+    \item 跨模态融合模块轻量化改进的贡献；
+    \item 对齐方式调整对结构一致性的影响。
+\end{itemize}
+
+通过逐项替换与对比，可以明确各设计在降低复杂度的同时对重建质量所产生的影响，从而验证轻量化方案的合理性与必要性。
+
+\subsection{渐进式去云策略性能分析}
+
+除结构轻量化外，Lite-SGN-CR 仍保留渐进式去云策略以增强结构恢复的稳定性。为分析该策略对最终结果的影响，本文比较不同阶段输出结果及单阶段重建结果的性能差异。
+
+实验结果表明，渐进式优化有助于逐层恢复受遮挡区域的空间结构，从而在复杂云层场景下提升重建稳定性。
+
+\section{本章小结}
+

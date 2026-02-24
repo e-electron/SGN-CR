@@ -1,0 +1,585 @@
+
+
+
+% --- (a) 组的图片命令：在此处统一修改 (a) 组的红框位置 ---
+\newcommand{\incA}[2]{% 
+    \begin{tikzpicture}[inner sep=0]
+        \node[anchor=south west] (img) {\includegraphics[#1]{#2}};
+        \begin{scope}[x={(img.south east)}, y={(img.north west)}]
+            % 修改下面的坐标即可改变 (a) 组所有红框
+            \draw[red, thick] (0.4, 0.25) rectangle (0.65, 0.7); 
+        \end{scope}
+    \end{tikzpicture}%
+}
+% --- (b) 组的图片命令：在此处统一修改 (b) 组的红框位置 ---
+\newcommand{\incB}[2]{%
+    \begin{tikzpicture}[inner sep=0]
+        \node[anchor=south west] (img) {\includegraphics[#1]{#2}};
+        \begin{scope}[x={(img.south east)}, y={(img.north west)}]
+            % 修改下面的坐标即可改变 (b) 组所有红框
+            \draw[red, thick] (0.02, 0.70) rectangle (0.4, 0.4); 
+        \end{scope}
+    \end{tikzpicture}%
+}
+\chapter{SAR引导下的双分支去云网络设计}
+\thispagestyle{others}
+\pagestyle{others}
+\xiaosi
+
+\section{本章引言}
+
+SAR 影像具备全天时、全天候成像能力，能够穿透云层获取稳定的地物散射信息，在云去除任务中展现出独特优势。近年来，基于 SAR 与光学影像融合的多模态云去除方法逐渐成为研究热点。然而，现有方法多采用并行特征提取或简单特征融合策略，SAR 与光学模态之间的交互往往局限于后期阶段，难以在特征建模早期有效引入结构约束；同时，SAR 影像固有的斑点噪声若缺乏有效抑制机制，也可能对光学重建结果造成干扰，影响光谱一致性。
+
+针对上述问题，本章提出一种基于 SAR 引导的双分支遥感图像云去除网络（SAR-Guided Dual-Branch Network for Cloud Removal，SGN-CR）。该模型从多模态协同建模的角度出发，构建由 SAR 分支和光学分支组成的异构双分支结构，通过显式结构引导机制在特征提取阶段建立跨模态约束关系，使 SAR 提供的稳定几何结构信息能够主动参与光学特征建模过程，从而有效缓解厚云区域结构缺失与纹理模糊问题。
+
+在网络结构设计上，SGN-CR 结合卷积神经网络与 Transformer 的优势，分别针对 SAR 与光学影像的成像特性进行特征建模。同时，引入层级协同的跨模态特征融合策略，在不同尺度和语义层级下实现结构引导与语义补全的有机结合。此外，为在保证全局建模能力的同时控制计算开销，模型采用高效的注意力建模方式以捕获长程依赖关系，提升大范围云遮挡场景下的重建一致性。
+
+本章将围绕 SGN-CR 网络的整体架构与关键模块展开详细介绍。首先给出模型的总体结构设计，其次依次阐述双分支特征编码机制、SAR 引导注意力调制方法、跨模态融合策略以及全局建模方法，最后通过系统实验验证所提出方法在云去除性能方面的有效性，为后续章节的进一步研究奠定基础。
+
+\section{研究方法}
+
+\subsection{SGN-CR 网络总体架构}
+
+为充分挖掘 SAR 与光学影像在云去除任务中的互补信息，本章提出的 SGN-CR 采用一种基于结构引导的双分支网络架构。该架构以“SAR结构先验引导光学重建”为核心思想，通过显式建模 SAR 图像特征和光学图像特征，在特征提取阶段即建立跨模态约束关系，从而提升厚云遮挡条件下的结构恢复能力与重建稳定性。
+
+如图~\ref{fig:SGN-CR}所示，SGN-CR 的整体网络结构由四个主要部分组成：SAR 编码分支、光学编码分支、跨模态特征融合模块以及解码重建模块。网络输入包括一幅含云光学影像和一幅与之空间对齐的 SAR 影像，二者分别进入对应的编码分支进行特征提取。在保持各自模态特性独立建模的同时，通过引导与融合机制实现多层次的信息交互。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=15cm]{chapters/figures/SGN-CR.png}
+	    \bicaption[\xiaosi SGN-CR
+ 整体网络结构示意图]{\wuhao SGN-CR
+ 整体网络结构示意图}{\wuhao SGN-CR Overall Network Structure Diagram}
+	   	 \label{fig:SGN-CR}
+\end{figure}
+
+SAR 编码分支采用基于卷积的结构，用于从 SAR 影像中提取稳定的几何结构特征。该分支重点关注地物的轮廓、边界以及空间连续性等结构信息，并通过多尺度特征提取逐步增强结构表达能力。由于 SAR 影像不受云层遮挡影响，该分支能够在厚云区域提供可靠的结构先验，为后续光学重建提供约束条件。经过编码后，SAR 分支输出的高层特征不仅参与跨模态融合，同时作为结构引导信号传递至光学分支。
+
+光学编码分支采用基于注意力机制的特征建模方式，旨在从含云光学影像中恢复被遮挡区域的光谱与语义信息。考虑到云遮挡会导致局部信息严重缺失，该分支在特征提取过程中引入 SAR 引导机制，使光学特征在建模时能够感知潜在的地物结构分布，从而避免在厚云区域产生无约束的纹理推断。同时，通过多层次的编码结构逐步扩大感受野，以增强对大范围云遮挡区域的上下文建模能力。
+
+在完成双分支特征编码后，SGN-CR 通过层级化的跨模态特征融合模块对不同尺度和语义层级的特征进行协同整合。浅层特征融合侧重于空间层面的结构注入与噪声抑制，以改善局部纹理连续性；深层特征融合则关注语义层面的对齐与补全，利用 SAR 提供的稳定结构信息辅助光学分支恢复被遮挡区域的高层语义表示。通过这种分层协同的融合方式，模型能够在不同尺度上充分发挥两种模态的互补优势。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=13cm]{chapters/figures/Restore-block.png}
+	    \bicaption[\xiaosi Restore-block 结构示意图]{\wuhao Restore-block 结构示意图}{\wuhao ORestorept-block structure diagram}
+	   	 \label{fig:Restore-block}
+\end{figure}
+
+为进一步说明解码重建模块的实现形式，本文采用 Restore-block 作为解码阶段的基本恢复单元。如图~\ref{fig:Restore-block} 所示，Restore-block 的核心计算遵循标准注意力建模流程：首先通过矩阵乘法计算查询与键之间的相关性，并进行尺度缩放与 Softmax 归一化以得到注意力权重，随后将权重与值向量进行加权聚合，实现特征重整与细节补偿。该模块主要用于在上采样恢复空间分辨率的同时，对云遮挡导致的局部纹理缺失区域进行自适应增强，从而提升解码阶段的结构连续性与边缘清晰度。需要指出的是，Restore-block 仅作用于融合后的特征恢复过程，以恢复空间分辨率和细节结构为主要目标，不再引入新的跨模态交互机制，与编码端的 SAR 引导与跨模态融合形成明确分工。在保持整体结构一致性的同时，进一步细化纹理与边缘信息，使输出结果在结构连续性和光谱一致性方面均接近真实无云影像。
+
+总体而言，SGN-CR 通过构建“编码—引导—融合—重建”的整体框架，在网络结构层面实现了 SAR 结构信息对光学重建过程的深度参与。该总体架构为后续各关键模块的设计提供了统一的组织形式，也为多模态信息在云去除任务中的有效协同奠定了基础。
+\subsection{SAR引导的双分支特征编码结构}
+针对 SAR 与光学影像在成像机理和信息表达方式上的显著差异，SGN-CR 在特征编码阶段采用双分支结构，对两种模态分别进行特征建模，并通过引导机制在编码阶段建立跨模态约束关系。该设计避免了对异构模态进行同构处理所带来的信息混淆，使网络能够在保持模态特性的同时实现有效协同。
+
+双分支编码结构由 SAR 分支和光学分支组成。其中，SAR 分支侧重于提取稳定的几何结构特征，为云遮挡区域的光学重建提供结构先验；光学分支则负责对含云影像进行语义与光谱特征建模，是最终去云结果的主要信息来源。二者在功能定位和网络结构上均存在明显差异，但在编码阶段通过显式引导机制形成协同关系。
+
+\subsubsection{SAR 分支的结构特征提取网络}
+
+SAR 影像基于微波散射成像，不受云层遮挡影响，能够稳定反映地物的几何轮廓和空间布局特征。然而，其影像中通常包含较强的斑点噪声，且缺乏精细的光谱信息。因此，在 SGN-CR 中，SAR 分支的设计目标并非进行语义推理或光谱重建，而是提取具有稳定性和连续性的结构先验，用于引导光学分支的特征建模过程。
+
+为此，SGN-CR 的 SAR 分支采用基于卷积神经网络的结构特征提取网络，通过局部感受野建模和层级下采样逐步强化地物结构表达能力。如图~\ref{fig:SAR-block}中所示，SAR 分支由若干连续的卷积块堆叠而成，每个卷积块均采用“卷积–归一化–非线性激活”的基本结构形式，即 Conv–BatchNorm–ReLU。该结构能够在有效抑制斑点噪声的同时，突出地物边缘、轮廓和结构走向等几何信息。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=5cm]{chapters/figures/SAR-block.png}
+	    \bicaption[\xiaosi SAR-block 结构示意图]{\wuhao SAR-block 结构示意图}{\wuhao SAR-block structure diagram}
+	   	 \label{fig:SAR-block}
+\end{figure}
+
+在网络层级设计上，SAR 分支通过多尺度特征提取逐步扩大感受野，使高层特征能够聚合更大范围内的结构信息。随着网络深度的增加，特征表示由局部纹理逐渐过渡为抽象的结构描述，从而为厚云遮挡区域提供可靠的几何约束。由于 SAR 分支的功能明确限定为结构先验提取，其输出特征主要用于后续的引导与融合过程，而不直接参与最终影像的重建。
+
+通过上述结构设计，SAR 分支能够在保持网络形式相对简洁的前提下，稳定提取对云去除任务具有关键约束作用的结构特征，为光学分支在云遮挡区域的特征建模提供必要的先验信息。
+\subsubsection{光学分支的语义特征编码网络}
+与 SAR 分支不同，光学影像包含丰富的光谱和语义信息，是云去除后最终恢复目标所在的模态。然而，在云遮挡区域，光学影像中的地物信息往往严重缺失，仅依赖局部上下文进行推断容易产生结构断裂或不真实的纹理补全。因此，光学分支在 SGN-CR 中承担着更为复杂的特征建模任务，需要同时具备局部细节建模和全局语义推理能力。
+
+为增强对大范围云遮挡区域的建模能力，SGN-CR 的光学分支采用基于注意力机制的特征编码结构，在特征提取过程中显式建模长程依赖关系。通过多层编码结构逐步抽象特征表示，光学分支能够在较大空间范围内捕获上下文信息，为被遮挡区域的语义补全提供依据。同时，该分支在编码过程中保留多尺度特征表示，以兼顾局部纹理细节与高层语义一致性。
+
+在双分支协同框架下，光学分支并非独立运行，而是在编码阶段引入来自 SAR 分支的结构引导信息。具体而言，SAR 分支输出的高层结构特征被用于调制光学特征的空间响应，使光学编码过程能够感知潜在的地物结构分布。这种设计有效约束了云遮挡区域的特征生成方向，减少了无约束语义推断带来的伪纹理问题。
+
+光学分支整体结构如图~\ref{fig:Opt-block}所示，但需要指出的是，本节重点关注光学分支的整体编码形态及其在双分支结构中的功能定位，具体的结构引导方式和注意力调制机制将在下一节中进一步展开。通过上述语义特征编码网络的设计，SGN-CR 能够在充分利用光学影像语义信息的同时，引入 SAR 提供的结构先验，从而为后续高质量的云去除重建奠定基础。
+
+\begin{figure}[h]
+		\centering 
+		\includegraphics[width=13cm]{chapters/figures/Opt-block.png}
+	    \bicaption[\xiaosi Opt-block 结构示意图]{\wuhao Opt-block 结构示意图}{\wuhao Opt-block structure diagram}
+	   	 \label{fig:Opt-block}
+\end{figure}
+
+\subsection{SAR引导的注意力调制机制（SGAM）}
+
+在双分支特征编码结构中，SAR 分支能够提供稳定的地物结构先验，但若仅在特征融合阶段引入该信息，仍难以从根本上约束光学分支在厚云区域的特征生成过程。为此，SGN-CR 在光学特征编码阶段引入一种 SAR 引导的注意力调制机制（SAR-Guided Attention Modulation，SGAM），通过显式的空间权重调制方式，使 SAR 提供的结构信息能够主动参与光学特征建模过程。
+
+如~\ref{fig:Opt-block}中 SAGM 所示，SGAM 的核心思想是利用 SAR 特征生成空间注意力权重，对光学特征进行逐位置调制，从而引导网络在云遮挡区域重点关注潜在的地物结构分布。与直接特征拼接或加权融合不同，SGAM 不对两种模态的特征进行同构映射，而是将 SAR 信息转化为对光学特征响应强度的约束信号，使结构先验以“调制”的形式嵌入光学编码过程。
+
+具体而言，设光学分支在某一编码阶段输出的特征图为$F_{opt} \in \mathbb{R}^{C \times H \times W}$，而 SAR 分支深层尺度下输出的结构特征为$F_{sar} \in \mathbb{R}^{C_s \times H_s \times W_s}$。SGAM 将 SAR 分支输出的深层结构特征$F_{sar}$作为调制信号 $Y_{guide}$ ，并利用 $Y_{guide}$生成用于调制注意力计算的引导项。如图~\ref{fig:Opt-block}(a) 所示，由于两分支在该阶段可能存在空间分辨率差异，首先对 $Y_{guide}$ 进行插值对齐：
+\begin{equation}
+\tilde{Y}_{guide} = \mathcal{I}(Y_{guide})
+\end{equation}
+其中 $\mathcal{I}(\cdot)$ 表示双线性插值算子。
+
+接着，将对齐后的 SAR 引导特征映射为三路引导张量，用于分别调制光学注意力中的 Query、Key 与 Value。具体地，先通过 Sigmoid 将引导响应进行归一化处理：
+\begin{equation}
+M = \sigma(\tilde{Y}_{guide})
+\end{equation}
+其中 $\sigma(\cdot)$ 为 Sigmoid 激活函数。随后，采用三组轻量映射函数将 $M$ 分别映射为 $Q_g$，$K_g$， $V_g$：
+\begin{equation}
+Q_g = \mathcal{G}_Q(M),\quad
+K_g = \mathcal{G}_K(M),\quad
+V_g = \mathcal{G}_V(M)
+\end{equation}
+其中 $\mathcal{G}_Q(\cdot)$，$\mathcal{G}_K(\cdot)$，$\mathcal{G}_V(\cdot)$ 表示用于通道对齐与尺度匹配的轻量卷积映射。
+
+另一方面，光学分支在进入自注意力计算前，将其特征 $F_{opt}$ 通过线性投影得到 $Q$，$K$，$V$：
+\begin{equation}
+\begin{aligned}
+Q = \phi_Q(F_{opt}),\quad
+K = \phi_K(F_{opt}),\quad
+V = \phi_V(F_{opt})
+\end{aligned}
+\end{equation}
+其中 $\phi_Q(\cdot)$，$\phi_K(\cdot)$，$\phi_V(\cdot)$ 表示对应的线性映射。
+
+最后，将三路 SAR 引导项以残差式“非抑制增强”的形式作用于光学分支的 $Q$，$K$，$V$，得到调制后的 $Q'$，$K'$，$V'$：
+\begin{equation}
+\begin{aligned}
+Q' = Q \odot (1 + Q_g)\\
+K' = K \odot (1 + K_g)\\
+V' = V \odot (1 + V_g)
+\end{aligned}
+\end{equation}
+其中 $\odot$ 表示逐元素乘法。上述 $(1+\cdot)$ 的残差式调制确保调制系数的取值域为 $(1,2)$，从而在任何情况下都不会抑制原始光学特征：当 SAR 引导响应较弱时，恒等项保证 $Q$、$K$、$V$ 的基础表征不被削弱；当 SAR 在道路、建筑边缘等区域给出显著结构提示时，$Q_g$、$K_g$、$V_g$ 将同步增强对应位置的注意力表征，进而在后续自注意力计算中引导光学分支更聚焦于潜在地物结构而非云层噪声。
+
+通过上述操作，光学特征在结构显著区域得到增强，而在结构不确定或噪声较多的区域受到抑制，从而有效约束云遮挡区域的特征生成过程。
+
+需要强调的是，SGAM 的作用并非直接引入 SAR 的像素级信息，而是利用 SAR 特征的结构一致性生成引导权重，对光学特征进行空间层面的响应调制。这种设计能够在保持光学特征语义表达能力的同时，引入稳定的几何约束，避免厚云区域中出现无物理依据的纹理推断。
+
+此外，SGAM 属于轻量级的引导机制，其主要计算开销来自简单的卷积映射和逐元素运算，不涉及复杂的矩阵乘法或全局注意力计算。因此，该模块可以在不显著增加计算复杂度的前提下，显著提升模型在复杂云遮挡场景下的结构一致性和重建稳定性。
+
+通过在光学特征编码阶段引入 SGAM，SGN-CR 实现了 SAR 结构先验对光学特征建模的早期介入，为后续跨模态特征融合和全局建模提供了更加可靠的特征基础。
+
+\subsection{层级协同的跨模态特征融合策略}
+
+在完成双分支特征编码与 SAR 引导调制之后，如何在不同尺度和语义层级下有效整合 SAR 与光学特征，是提升云去除重建质量的关键问题。若仅在单一尺度或单一层级进行跨模态交互，容易导致结构信息利用不充分或语义补全能力受限。为此，SGN-CR 设计了一种层级协同的跨模态特征融合策略，在浅层与深层分别引入针对性的融合机制，实现结构信息与语义信息的互补协同。
+
+该融合策略由两个功能互补的模块构成：空间自适应门控融合模块（Spatially Adaptive Gated Fusion，SAGF）与跨模态交叉注意力融合模块（Cross-Modal Cross Attention，CMCA）。二者分别作用于不同尺度和语义层级，形成由浅入深的跨模态协同过程。
+
+\begin{figure}[h]
+	\centering
+	\subfigure[]{
+		\label{fig:SAGF}
+		\includegraphics[width=4.4cm]{chapters/figures/SGN-CR_SAGF.png}}
+	\hspace{1cm}
+	\subfigure[]{
+		\label{fig:CMCA}
+		\includegraphics[width=5cm]{chapters/figures/CMCA.png}}   
+\bicaption[\xiaosi 协同特征融合模块]{\wuhao 协同特征融合模块 (a) SAGF 模块示意图 (b) CMCA 模块示意图}{\wuhao Collaborative Feature Fusion (a) SAGF module diagram (b) CMCA module diagram}
+\end{figure}
+
+\subsubsection{空间自适应门控融合模块（SAGF）}
+
+在编码网络的浅层阶段，特征主要包含局部纹理与边缘信息，空间分辨率较高。此时，SAR 特征能够提供清晰的地物轮廓和结构连续性，但其斑点噪声若直接注入光学特征，可能对局部纹理恢复造成干扰。因此，SGN-CR 在浅层采用 SAGF 模块对 SAR 信息进行选择性引入。
+
+SAGF 的核心思想是根据光学特征与 SAR 特征的联合响应，自适应生成空间门控权重，从而决定 SAR 结构信息在不同空间位置的注入强度。设某一尺度下光学特征与 SAR 特征分别为$F_{opt}^{(l)} \in \mathbb{R}^{C_l \times H_l \times W_l}$，$F_{sar}^{(l)} \in \mathbb{R}^{C_s \times H_l \times W_l}$，首先在通道维度上对两种模态特征进行拼接，得到联合特征表示：
+\begin{equation}
+F_{cat}^{(l)} =
+\left[ F_{opt}^{(l)} , F_{sar}^{(l)} \right]
+\end{equation}
+随后，通过轻量级卷积映射生成空间门控权重图：
+\begin{equation}
+G^{(l)} = \sigma\left( \mathcal{H} \left( F_{cat}^{(l)} \right) \right)
+\end{equation}
+其中 $\mathcal{H}(\cdot)$ 表示由卷积层构成的映射函数，$\sigma(\cdot)$ 为 Sigmoid 激活函数，$G^{(l)} \in \mathbb{R}^{1 \times H_l \times W_l}$。
+最终，SAGF 通过门控方式对 SAR 特征进行加权注入：
+\begin{equation}
+F_{fuse}^{(l)} = F_{opt}^{(l)} + G^{(l)} \odot F_{sar}^{(l)}
+\end{equation}
+该公式设计的有效性建立在残差学习与不确定性建模的理论基础之上，门控掩膜$G$实质上充当了一个像素级的不确定性评估器。网络通过联合分析$F_{opt}$的纹理缺失程度与$F_{sar}$的结构显著性，自适应地调节融合策略。
+
+在厚云区域，门控值$G$趋近于1，门控网络识别出光学信息的高不确定性，从而全强度激活 SAR 特征的注入权重。值得注意的是，由于$F_{sar}$已通过 SAR 分支进行了特征抽象与降噪处理，此时注入的是地物几何骨架特征而非原始的相干斑噪声，从而有效填补了纹理空洞。
+
+在无云或者清晰区域，门控值$G$趋近于0，此时光学特征$F_{opt}$包含高保真的地表光谱，对 SAR 特征进行空间阻断，模型能够无损地保留光学图像中未受污染的原始光谱信息（如颜色与亮度），防止 SAR 模态特征干扰高保真的光谱分布，对无云区域造成不必要的辐射扰动，有效维持了光谱的真实性。
+
+而在过渡区域，此时一般是在云边缘或薄云区，$G$处于中间值，网络自适应地平衡两者，实现纹理的平滑过渡。
+
+这种机制成功地将 SAR 的结构优势与噪声劣势在空间域上进行了解耦，确保了模型仅在必要的位置引入必要的辅助信息，从而在最大化结构恢复能力的同时，实现了融合伪影的最小化。通过上述设计，SAGF 能够在结构显著区域增 SAR 信息的引导作用，同时在噪声或不确定区域抑制其干扰，从而在浅层阶段实现结构信息的稳健注入。
+\subsubsection{跨模态交叉注意力融合模块（CMCA）}
+在网络的深层阶段，特征逐渐具备较强的语义表达能力，空间分辨率相对降低。此时，云遮挡区域的主要问题由局部纹理缺失转变为高层语义不完整，简单的逐像素融合已难以满足语义补全需求。为此，SGN-CR 在深层引入 CMCA 模块，以实现更高层次的跨模态语义协同。
+
+CMCA 采用交叉注意力机制，使光学特征能够从 SAR 特征中检索与当前语义位置相关的结构信息。设光学与 SAR 的深层特征分别为 ${F_{opt}}^{(h)}$ 与 ${F_{sar}}^{(h)}$，CMCA 以光学特征作为查询（Query），以 SAR 特征作为键（Key）和值（Value），其计算过程可表示为：
+\begin{equation}
+Q = \mathcal{W}_q F_{opt}^{(h)},\quad
+K = \mathcal{W}_k F_{sar}^{(h)}, \quad
+V = \mathcal{W}_v F_{sar}^{(h)}
+\end{equation}
+其中 $\mathcal{W}_q$、$\mathcal{W}_k$ 和 $\mathcal{W}_v$ 表示线性映射矩阵，并且将深层光学特征$F_{opt}$定义为 Q 的来源，将具备完整结构信息的 SAR 特征$F_{sar}$定义为 K 和 V 的来源。输入的特征通过投影层和卷积层在注意力计算前补充局部上下文信息，随后通过矩阵运算，生成跨模态注意力图：
+\begin{equation}
+A = \mathrm{Softmax}\left( \frac{{QK}^\top}{\sqrt{d}} \right)V
+\end{equation}
+其中 $d$ 为特征维度，$\mathrm{Softmax}\left( \frac{{QK}^\top}{\sqrt{d}} \right)$为交叉注意力权重。最终融合特征由加权求和得到：
+\begin{equation}
+F_{fuse}^{(h)} = A + F_{opt}^{(h)}
+\end{equation}
+
+通过 CMCA，光学特征能够在语义层面有选择地吸收 SAR 中与当前上下文相关的结构信息，从而提升厚云遮挡区域的语义一致性与结构合理性。
+
+综上所述，SAGF 与 CMCA 分别从空间层面和语义层面对 SAR 与光学特征进行协同建模，构成一种由浅入深的层级跨模态融合策略。该设计使结构先验在不同特征层级中均能够被有效利用，为后续光学特征的全局建模与解码重建提供更加可靠的融合特征表示。
+
+\subsection{基于跨轴注意力的全局建模方法（CAA）}
+
+在完成 SAR 引导的特征编码与跨模态融合之后，光学特征已经在多尺度层面融合了结构先验信息。然而，对于大范围厚云遮挡区域，仅依赖局部卷积或逐像素融合仍难以充分建模长程依赖关系。为增强光学特征在空间维度上的全局建模能力，SGN-CR 在光学分支中引入一种基于跨轴注意力的全局建模方法（Cross-Axis Attention，CAA），用于在较低计算代价下捕获远距离像素之间的相关性。
+
+传统二维自注意力通常在空间维度上对所有位置两两计算相关性，其计算复杂度随空间分辨率呈平方增长，在高分辨率特征图上计算代价较高。CAA 通过将二维空间注意力分解为沿单一轴方向的一维注意力计算，在保持全局建模能力的同时有效降低计算复杂度。在跨轴注意力中，注意力计算被分解为沿高度方向和宽度方向的两个一维注意力过程。如图\ref{fig:Opt-block}(b)所示，CAA 模块以 SAGM 模块输出的经调制后的 $Q'$、$K'$和$V'$作为输入，按顺序对高度和宽度方向进行注意力计算。
+
+沿高度轴进行注意力计算是对特征图的每一列像素进行注意力计算，能捕获垂直方向上的长程上下文依赖。这里的“长程依赖”指的是位于图像顶部和底部的像素之间的语义关联（例如贯穿整幅图像的河流或道路），这是由于云层遮挡可能导致局部纹理断裂，需通过全局上下文进行推断，复杂度为$O(H \times W \times H)$。
+而宽度轴与高度轴同理，但是对每一行像素进行计算，捕获水平方向的长程依赖。复杂度为$O(H \times W \times W)$。通过以上这种分解，CAA 的计算复杂度从$O((HW)^2)$降低为$O(H^2W+HW^2)$，当$H=W=N$时，复杂度从$O(N^4)$降至$O(N^3)$。
+
+具体实现是将$Q'$，$K'$，$V'$做维度变换得到$Q_h$，$K_h$，$V_h$，沿高度轴计算注意力权重并进行特征聚合：
+\begin{equation}
+{Out}_h = \mathrm{Softmax}\left (\frac{Q_h {K_h}^T}{d}\right )V_h
+\end{equation}
+
+其中 $d$表示特征维度，$Q_h$和$K_h$分别表示沿高度轴展开后的查询与键特征，$\mathrm{Softmax}\left (\frac{Q_h {K_h}^T}{d}\right )$是沿高度轴计算的注意力权重。
+之后将$K'$，$V'$进行维度变换作为下一步的$K_w$，$V_w$，将刚刚得到的${Out}_h$作为$Q_w$。同样在宽度方向上计算一维注意力后得到宽度方向的聚合特征：
+\begin{equation}
+{Out}_w = \mathrm{Softmax}\left (\frac{Q_w K_w^T}{d} \right )V_w
+\end{equation}
+最终，将${Out}_w$作为最终的跨轴注意力模块输出。
+
+通过上述方式，CAA 能够在不显著增加计算开销的前提下，使光学特征在空间维度上建立远距离依赖关系，从而提升大范围云遮挡场景下的语义一致性和结构连贯性。需要指出的是，CAA 仅作用于光学特征内部，不涉及 SAR 信息的直接参与，其主要作用在于增强光学分支自身的全局建模能力，与前述 SAR 引导机制和跨模态融合模块在功能上形成互补。
+
+\subsection{训练目标与损失函数设置}
+
+遥感图像云去除任务不仅要求模型在像素层面准确重建被云遮挡区域的地物信息，还需同时保持地物结构的连续性与多光谱影像的光谱一致性。针对这一多目标约束问题，单一损失函数往往难以全面刻画去云结果的质量。为此，本文在训练阶段采用多项联合损失函数，对网络输出从像素精度、结构纹理以及光谱保真性三个层面进行综合约束。
+
+考虑到该类联合损失形式已在遥感图像云去除与重建任务中得到广泛验证，本文在损失函数设计上未引入额外的复杂约束，而是基于已有研究中成熟且稳定的联合损失框架进行继承与应用。具体而言，本文采用文献 HPN\textsuperscript{\cite{gu2025hpn}} 中提出的联合损失函数作为训练目标，其定义如下：
+\begin{equation}
+\mathcal{L}_{total}(P, T) 
+= \alpha \mathcal{L}_{SmoothL_1}(P, T)
++ (1 - \alpha) \mathcal{L}_{MS-SSIM}(P, T)
++ \beta \mathcal{L}_{SAM}(P, T)
+\label{eq:loss_total}
+\end{equation}
+其中，$P$ 与 $T$ 分别表示网络预测的去云光学影像与对应的真实无云影像，二者维度均为 $C \times H \times W$；$\alpha$ 与 $\beta$ 为用于平衡各损失项贡献的超参数。
+
+\subsubsection{像素级重建损失（$SmoothL_1$）}
+
+像素级重建损失用于直接约束模型输出在数值层面逼近真实无云影像，是云去除任务中最基础的监督信号。本文采用 $SmoothL_1$ 损失作为像素级约束项。相较于 $L_2$ ， $SmoothL_1$ 在大误差区域更具鲁棒性，能够缓解云边缘和高反射区域可能带来的异常梯度，从而促进训练过程稳定收敛并提高像素层面的重建精度。
+
+\subsubsection{结构相似性约束损失（MS-SSIM）}
+
+仅依赖像素级损失容易导致模型在云遮挡区域出现结构模糊或纹理断裂。为增强对结构与纹理细节的约束能力，本文引入多尺度结构相似性损失（Multi-Scale Structural Similarity, MS-SSIM），其从不同尺度对亮度、对比度与结构信息进行联合评估，有助于抑制重建过程中的过度平滑并提升纹理细节一致性。对应的损失形式为：
+\begin{equation}
+\mathcal{L}_{MS-SSIM}(P, T)
+= 1 - {MS-SSIM}(P, T)
+\label{eq:loss_msssim}
+\end{equation}
+
+\subsubsection{光谱一致性约束损失（SAM）}
+
+遥感影像云去除不仅要求结构恢复合理，还需尽可能保持地物的真实光谱特性。为此，本文引入光谱角映射（Spectral Angle Mapper, SAM）作为光谱一致性约束，通过最小化预测光谱向量与真实光谱向量之间的夹角，降低多光谱通道间的相对失真风险。其定义为：
+\begin{equation}
+\mathcal{L}_{SAM}(P, T)
+= \cos^{-1} \left(
+\frac{\sum\limits_{c,h,w} p_{c,h,w}\, t_{c,h,w}}
+{\sqrt{\sum\limits_{c,h,w} p_{c,h,w}^2}\;
+ \sqrt{\sum\limits_{c,h,w} t_{c,h,w}^2}}
+\right)
+\label{eq:loss_sam}
+\end{equation}
+其中，$p_{c,h,w}$ 与 $t_{c,h,w}$ 分别表示预测影像与真实影像在通道 $c$、空间位置 $(h,w)$ 的像素值。该约束能够有效抑制去云过程引入的颜色偏移与光谱形态失真，从而提升结果在后续遥感解译任务中的可用性。
+
+\subsubsection{联合损失设置与分析}
+
+通过式~(\ref{eq:loss_total}) 的联合优化，网络在训练过程中能够同时受到来自像素精度、空间结构与光谱分布三个层面的约束。该训练目标与本文 SGN-CR 的网络设计思想保持一致：SAR 分支与结构引导机制侧重于提升结构一致性，光学分支的注意力建模侧重语义与上下文推理，而联合损失则在监督层面对结构恢复与光谱保持提供互补约束，从而促进模型学习到更符合遥感成像特性的映射关系。
+
+在实际训练中，本文参考相关工作经验并结合任务特点设置损失权重：为强化结构信息在去云重建中的约束作用，将 $\alpha$ 设置为 0.2，使结构相关的 MS-SSIM 项在整体优化中占据更高权重；同时将 $\beta$ 设置为 0.005，以保证 SAM 损失在数值量级上与其他损失项保持平衡。相关权重配置对模型性能的影响将在后续实验章节中进一步验证与讨论。
+
+\section{实验环境与数据集说明}
+\subsection{数据集说明}
+
+为验证所提出 SGN-CR 方法在遥感图像云去除任务中的有效性，本文选用公开的多模态遥感云去除数据集 SEN12MS-CR\textsuperscript{\cite{ebel2022sen12ms}} 进行实验验证。该数据集包含来自全球不同区域的 169 个感兴趣区域（Regions of Interest, ROIs），覆盖多种地物类型、季节变化及气象条件，具有较强的多样性与代表性。
+
+每个 ROI 覆盖的地面范围约为 $52 \times 40$ km，对应原始影像分辨率约为 $5200 \times 4000$ 像素。为适应深度学习模型的输入需求，本文将原始影像裁剪为大小为 $256 \times 256$ 的不重叠图像块。经处理后，数据集共包含 122,218 组样本，每组样本由以下三部分组成：  
+(1) 一幅来自 Sentinel-2 的含云多光谱光学影像（包含 13 个光谱波段）；  
+(2) 与之对应的无云光学参考影像；  
+(3) 一幅来自 Sentinel-1 的 SAR 影像，包含 VV 与 VH 双极化通道。
+
+在数据预处理阶段，本文采用与 HPN-CR 方法\textsuperscript{\cite{gu2025hpn}}一致的处理流程。具体而言，对 SAR 数据进行强度截断以去除异常值，其中 VV 极化通道截断至 $[-25, 0]$ dB，VH 极化通道截断至 $[-35, 0]$ dB，随后统一归一化至 $[0,1]$ 区间，以减小不同通道间的数值尺度差异。
+
+为评估模型的泛化能力，本文按照 ROI 级别对数据集进行划分，将全部 ROI 按照 149:10:10 的比例随机划分为训练集、验证集和测试集。最终，训练集包含 107,143 个样本，验证集包含 7,176 个样本，测试集包含 7,899 个样本。
+
+\subsection{实验实现细节}
+
+本文所有实验均基于 PyTorch 深度学习框架实现，并在单张 NVIDIA GeForce RTX 4090 D GPU（显存 24 GB）上完成模型训练与测试。模型训练过程中采用 AdamW 优化器，初始学习率设置为 $1 \times 10^{-4}$，并使用余弦退火（Cosine Annealing）策略对学习率进行动态调整。
+
+在训练设置方面，batch size 设置为 16，模型共训练 15 个 epoch。在保证训练过程稳定收敛的前提下，上述配置能够在训练效率与性能表现之间取得较好的平衡。除网络结构差异外，本文在所有对比实验中均保持一致的训练策略与参数设置，以确保实验结果的公平性与可比性。
+
+\subsection{对比方法设置}
+
+为全面评估所提出 SGN-CR 方法在遥感图像云去除任务中的性能表现，本文选取了多种具有代表性的已有方法作为对比基线。根据模型所采用的输入模态形式以及网络结构设计思想的不同，对比方法可大致分为以下三类。本文提出的 SGN-CR 属于基于 SAR 与光学影像协同建模的多模态深度学习方法，其设计目标是在保持结构恢复能力的同时提升重建稳定性，因此主要与第二类和第三类方法进行对比分析。
+
+\textbf{（1）单模态与早期生成式方法。}  
+该类方法主要用于验证在云去除任务中引入多模态信息的必要性。具体包括 GANs \textsuperscript{\cite{darbaghshahi2021cloud}}，其利用生成对抗网络实现从 SAR 到光学影像的直接映射；以及仅基于光学影像的注意力模型 AMGAN-CR\textsuperscript{\cite{xu2022attention}}，通过挖掘光学影像内部上下文信息进行云遮挡区域的重建。
+
+\textbf{（2）传统多模态深度融合方法。}  
+该类方法利用深度神经网络对 SAR 与光学影像进行特征级融合，代表了多模态遥感云去除研究中的主流技术路线。本文选取了多种具有代表性的模型进行对比，包括基于卷积神经网络的统一空间–光谱残差网络 USSRN-CR\textsuperscript{\cite{wang2023cloud}}，以及结合条件生成对抗网络的多模态生成模型 SAR-Opt-cGAN~\textsuperscript{\cite{grohnfeldt2018conditional}}。此外，还选取了基于 Transformer 架构的融合方法 GLF-CR\textsuperscript{\cite{xu2022glf}} 和 Former-CR\textsuperscript{\cite{han2023former}}，以对比不同注意力建模机制在云去除任务中的效果差异。
+
+\textbf{（3）异构并行网络方法。}  
+为进一步验证本文所提出网络结构设计的有效性，本文选取最新的异构并行网络模型 HPN-CR\textsuperscript{\cite{gu2025hpn}} 作为核心对比方法。该模型通过并行建模不同模态特征并引入结构引导机制，在当前多模态云去除研究中具有代表性。与 HPN-CR 相比，本文提出的 SGN-CR 同样采用双分支结构，但在结构引导方式和特征协同机制上进行了针对性改进，相关性能对比结果将在后续实验中详细给出。
+
+\section{实验结果与分析}
+
+\subsection{定量实验结果分析}
+
+表~\ref{tab:Table_compare} 给出了本文提出的 SGN-CR 与多种代表性遥感图像云去除方法在 SEN12MS-CR 数据集上的定量对比结果。对比方法涵盖单模态方法、传统多模态深度融合方法以及最新的异构并行网络模型。评价指标包括 PSNR、SSIM、SAM 和 MAE，分别从像素重建精度、结构一致性、光谱保持性和像素级误差等多个角度对去云效果进行综合评估。
+
+\begin{table}[h]
+\renewcommand{\arraystretch}{1.5}
+	\bicaption[\xiaosi 不同云去除方法在 SEN12MS-CR 数据集上的定量对比结果]
+	{\wuhao 不同云去除方法在 SEN12MS-CR 数据集上的定量对比结果}
+	{\wuhao Quantitative comparison of different cloud removal methods on the SEN12MS-CR dataset}
+	\label{tab:Table_compare}
+	\centering
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.07\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.07\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.11\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}@{}}
+		\toprule[1.5pt]
+		\multirow{2}{*}{模型} & \multicolumn{2}{c}{输入模态} & \multirow{2}{*}{PSNR(dB)$\uparrow$} & \multirow{2}{*}{SSIM$\uparrow$} & \multirow{2}{*}{SAM($^\circ$)$\downarrow$} & \multirow{2}{*}{MAE$\downarrow$} \\
+		\cline{2-3}
+		& 光学 & SAR &  &  &  &  \\
+		\hline
+		GANs\textsuperscript{\cite{darbaghshahi2021cloud}} & $\times$ & \checkmark & 24.1163 & 0.8455 & 9.7653 & 0.03792 \\
+		AMGAN-CR\textsuperscript{\cite{xu2022attention}} & \checkmark & $\times$ & 28.1985 & 0.8701 & 9.2323 & 0.02991 \\
+		SAR-Opt-cGAN\textsuperscript{\cite{grohnfeldt2018conditional}} & \checkmark & \checkmark & 27.1266 & 0.8364 & 8.8707 & 0.03960 \\
+		GLF-CR\textsuperscript{\cite{xu2022glf}} & \checkmark & \checkmark & 28.8497 & 0.8580 & 8.5006 & 0.02742 \\
+		Former-CR\textsuperscript{\cite{han2023former}} & \checkmark & \checkmark & 28.5932 & 0.8799 & 8.2512 & 0.02814 \\
+		USSRN-CR\textsuperscript{\cite{wang2023cloud}} & \checkmark & \checkmark & 28.6043 & 0.8532 & 9.1736 & 0.02856 \\
+		HPN-CR\textsuperscript{\cite{gu2025hpn}} & \checkmark & \checkmark & 29.9422 & 0.8973 & 7.9434 & 0.02515 \\
+		\textbf{SGN-CR}
+		& \textbf{\checkmark} & \textbf{\checkmark}
+		& \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
+	\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+从表~\ref{tab:Table_compare} 可以看出，不同技术路线在四项指标上的表现呈现出较为一致的规律：单模态方法在厚云区域受信息缺失约束，光谱或结构维度易出现明显退化；传统融合方法能够显著提升像素与结构指标，但往往面临“结构先验引入”与“斑点噪声污染”之间的权衡；先进异构网络在整体性能上更具竞争力，但若缺乏编码阶段的显式跨模态交互，其跨模态对齐精度与光谱一致性仍存在进一步提升空间。本文 SGN-CR 通过“编码阶段显式引导 + 分层协同融合 + 低复杂度全局建模”的组合设计，在像素精度、结构一致性与光谱保持性三方面实现同步提升。所以SGN-CR 在四项评价指标上均取得了最优的性能表现，验证了本文所提出异构双分支结构及 SAR 引导机制在遥感云去除任务中的有效性。
+
+首先，与单模态方法相比，多模态信息的引入对提升云去除性能具有显著作用。仅依赖 SAR 输入的 GANs 方法虽然能够基于雷达后向散射特性恢复部分几何轮廓，但由于完全缺乏光学光谱参考，其重建结果在光谱一致性方面表现较差，PSNR 仅为 24.12 dB，SAM 高达 9.77°，存在明显的颜色失真问题。光学单模态方法 AMGAN-CR 将云去除视为图像修复任务，在薄云区域能够取得一定效果，但在厚云遮挡场景下缺乏穿透性结构信息支撑，难以恢复真实地物细节。相比之下，SGN-CR 通过融合 SAR 与光学影像，在 AMGAN-CR 的基础上实现了约 2.35 dB 的 PSNR 提升，表明多模态协同对于厚云场景下的云去除任务具有不可替代的重要性。
+
+其次，在传统多模态深度融合方法中，SAR-Opt-cGAN、USSRN-CR 等模型通常采用通道拼接或简单特征叠加的方式进行硬融合。这类非选择性的融合策略容易将 SAR 影像中固有的斑点噪声引入光学重建结果，这种噪声耦合会直接抬升像素误差（MAE）并破坏局部纹理一致性（SSIM），同时在光谱维度造成通道间相对关系扰动，使得 SAM 难以下降到较低水平，并且在无云或弱云区域产生明显颗粒感，影响整体图像质量。相比之下，SGN-CR 在特征融合阶段引入了空间自适应门控机制，根据云分布动态调节 SAR 特征的注入强度，在抑制噪声传播的同时充分利用 SAR 的结构先验信息。另外，本章提出的 SAGF 在浅层以像素级门控方式抑制噪声扩散，使 SAR 的贡献更集中于厚云区域的结构补偿，从而避免“引入结构先验的同时污染无云区域”的常见问题。最终使 SGN-CR 在结构一致性指标上取得了最高的 SSIM 值（0.8990）势。
+
+进一步与异构并行网络方法 HPN-CR 对比可以发现，尽管 HPN-CR 通过并行建模不同模态特征，在多项指标上已取得较强性能（PSNR 为 29.94 dB），SGN-CR 仍在此基础上实现了进一步提升。具体而言，SGN-CR 在 PSNR 上提升约 0.60 dB，在 SAM 指标上降低约 0.36°，同时在 MAE 上取得更低误差。这表明 SGN-CR 在保持整体重建精度的同时，对光谱形态的保持更为准确。因此，相比于“并行提取、后期融合”的异构范式，本章进一步证明了“编码阶段显式引导、分层协同融合”的设计能够更充分释放 SAR 结构先验的约束价值，并在保持光谱一致性的同时实现更稳定的结构恢复。
+
+上述性能提升并非源于简单的参数规模增加，而是得益于 SGN-CR 在结构设计上的多层次改进。一方面，SGN-CR 通过在特征提取阶段引入 SAR 引导的注意力调制机制，使 SAR 提供的深层结构先验能够直接参与光学特征的建模过程，从而在早期阶段实现更精确的跨模态对齐；另一方面，引入的跨轴注意力模块能够有效建模长程光谱依赖关系，在大范围云遮挡区域（如河流、农田等）中提升光谱一致性表现。此外，SGN-CR 采用分层协同的融合策略，在浅层抑制噪声、在深层补全语义，从整体上提升了多模态互补效果。
+
+综合上述分析，定量实验结果表明，SGN-CR 在像素精度、结构一致性与光谱保持性等方面均优于现有代表性方法，验证了其在遥感图像云去除任务中的有效性与鲁棒性。
+
+\subsection{可视化实验结果分析}
+
+为直观评估不同方法在复杂云遮挡场景下的去云效果，本文从 SEN12MS-CR 测试集中选取若干具有代表性的样本进行可视化对比分析。这些样本覆盖了不同地物类型与不同云覆盖程度，其中部分区域受到厚云严重遮挡，地表信息几乎完全缺失，能够充分反映模型在极端条件下的重建能力。
+
+图~\ref{fig:visualization} 展示了各方法在相同测试样本上的去云结果。图像从左至右依次为 SAR 输入影像、含云光学影像、无云参考影像以及不同对比方法和本文方法的重建结果。通过可视化对比，可以更加直观地观察不同模型在结构恢复、纹理连续性和光谱一致性方面的差异。
+\begin{figure*}[htbp]
+	\centering
+	\renewcommand{\arraystretch}{1.2}
+	\wuhao
+	
+	\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} ccccc @{}}
+		\multicolumn{5}{c}{\wuhao (a)}\\
+		
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_SAR.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_Cloudy.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_Cloud-Free.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_GANs.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_SAR-Opt-cGAN.png} \\[-0.6ex]
+		
+		\makecell[c]{\wuhao SAR} &
+		\makecell[c]{\wuhao Cloudy} &
+		\makecell[c]{\wuhao Cloud-Free} &
+		\makecell[c]{\wuhao GANs} &
+		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.8ex]  
+		
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_GLF-CR.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_USSRN-CR.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_AMGAN-CR.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_HPN-CR.png} &
+		\incA{width=0.18\textwidth}{chapters/figures/figure/a_SGN-CR(Ours).png} \\[-0.6ex]
+		\makecell[c]{\wuhao GLF-CR} &
+		\makecell[c]{\wuhao USSRN-CR} &
+		\makecell[c]{\wuhao AMGAN-CR} &
+		\makecell[c]{\wuhao HPN-CR} &
+		\makecell[c]{\wuhao \textbf{SGN-CR}} \\
+		
+		
+		\multicolumn{5}{c}{\wuhao (b)}\\
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_SAR.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_Cloudy.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_Cloud-Free.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_GANs.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_SAR-Opt-cGAN.png} \\[-0.6ex]
+		\makecell[c]{\wuhao SAR} &
+		\makecell[c]{\wuhao Cloudy} &
+		\makecell[c]{\wuhao Cloud-Free} &
+		\makecell[c]{\wuhao GANs} &
+		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.8ex]  
+		
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_GLF-CR.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_USSRN-CR.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_AMGAN-CR.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_HPN-CR.png} &
+		\incB{width=0.18\textwidth}{chapters/figures/figure/c_SGN-CR(Ours).png} \\[-0.6ex]
+		\makecell[c]{\wuhao GLF-CR} &
+		\makecell[c]{\wuhao USSRN-CR} &
+		\makecell[c]{\wuhao AMGAN-CR} &
+		\makecell[c]{\wuhao HPN-CR} &
+		\makecell[c]{\wuhao \textbf{SGN-CR}} \\
+	\end{tabular*}
+	
+	\bicaption[\xiaosi SEN12MS-CR 测试集上不同方法的云去除对比结果]
+	{\wuhao SEN12MS-CR 测试集上不同方法的云去除对比结果。（a）（b）为不同代表性场景。}
+	{\wuhao Comparison of cloud removal results on representative scenes from the SEN12MS-CR test set. (a) and (b) denote two representative scenes.}
+	\label{fig:visualization}
+\end{figure*}
+
+从单模态方法的结果可以看出，仅依赖 SAR 的方法（如 GANs）虽然能够利用雷达回波信息恢复道路、水体等地物的基本轮廓，但由于缺乏光学光谱先验，其重建结果普遍存在明显的颜色失真问题，整体色调偏暗且单一，难以真实反映地表覆盖类型。仅基于光学影像的 AMGAN-CR 方法在薄云区域具有一定修复能力，但在厚云遮挡区域（图中红色标注区域）由于无法获取穿透性结构信息，往往出现纹理模糊甚至伪影生成的现象。
+
+对于多模态融合方法，不同模型在可视化效果上仍存在较大差异。部分 Transformer 融合方法（如 GLF-CR）在整体色彩一致性方面有所改善，但容易对局部高频细节产生过度平滑，导致道路边缘和建筑轮廓不够清晰。基于卷积结构的融合方法（如 SAR-Opt-cGAN 和 USSRN-CR）在一定程度上引入了 SAR 结构信息，但由于缺乏有效的噪声抑制机制，重建结果中仍可观察到明显的斑点噪声残留，尤其在无云区域更为明显。
+
+相比之下，本文提出的 SGN-CR 在不同场景下均表现出更优的视觉效果。得益于 SAR 结构引导机制与层级协同融合策略，SGN-CR 能够在厚云遮挡区域准确恢复道路网络、农田边界等复杂几何结构，同时在光谱层面保持与无云参考影像高度一致的色彩分布。在图中红色标注的关键区域内，SGN-CR 有效避免了光谱偏移和噪声残留问题，在保证图像清晰度的同时实现了自然平滑的纹理过渡。
+
+总体来看，可视化实验结果与前述定量评价指标的结论保持一致，进一步验证了 SGN-CR 在结构恢复能力、光谱保持性以及整体视觉质量方面的综合优势。
+
+\subsection{关键模块消融实验分析}
+
+为了全面验证 SGN-CR 网络中各核心组件的有效性和具体贡献，我们在 SEN12MS-CR 数据集上进行了系统的消融实验。这些实验旨在解答SAR引导的注意力调节是否比无引导的并行特征提取更有效、CAA在平衡全局建模和计算效率方面是否优于传统机制、协同特征融合策略是否是特征融合的最优方案这三个问题。这些实验的定量比较结果分别总结在表~\ref{tab:ablation_guidance}、\ref{tab:ablation_attention}和~\ref{tab:ablation_fusion}中。
+
+\subsubsection{SAR 引导注意力调制机制的有效性}
+
+为验证 SAR 引导注意力调制机制（SGAM）在特征编码阶段的实际作用，本文在保持双分支网络结构和后续跨模态融合策略不变的前提下，构建了一种不引入 SAR 引导的对比模型。该变体仅保留 SAR 与光学分支的并行特征提取过程，并在后续阶段进行协同融合，其结构示意如图~\ref{fig:Opt-block}(a) 所示。
+
+表~\ref{tab:ablation_guidance} 给出了是否引入 SGAM 的定量对比结果。可以观察到，在移除 SGAM 后，模型的 PSNR 由 30.5503 dB 降至 29.6152 dB，SSIM 由 0.8990 降至 0.8957，同时 SAM 和 MAE 均出现明显劣化。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi SAR 引导注意力调制机制消融实验结果]
+		{\wuhao SAR 引导注意力调制机制消融实验结果}
+		{\wuhao Ablation results of SAR-guided attention modulation}
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.26\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.15\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.15\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.15\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.15\textwidth}@{}}
+		\toprule[1.5pt]
+		\makecell[c]{是否引入SGAM} & \makecell[c]{PSNR(dB)$\uparrow$} & \makecell[c]{SSIM$\uparrow$} & \makecell[c]{SAM($^\circ$)$\downarrow$} & \makecell[c]{MAE$\downarrow$}\\
+		\hline
+		\makecell[c]{\textbf{是}} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379}\\
+		\makecell[c]{否} & 29.6152 & 0.8957 & 8.1098 & 0.02578\\
+		\bottomrule[1.5pt]
+	\end{tabular}
+	\label{tab:ablation_guidance}
+\end{table}
+
+该结果表明，仅依赖后续特征融合难以弥补光学分支在特征编码阶段缺乏结构约束所带来的误差累积问题。在厚云遮挡区域，光学分支若无法感知潜在地物结构，其特征建模容易受到云层噪声干扰，从而影响后续重建质量。
+
+相比之下，SGAM 通过在特征编码阶段引入 SAR 深层结构先验，对光学注意力计算过程进行显式调制，使光学特征在早期即获得几何约束。这种“先引导、后融合”的设计有效抑制了无约束特征传播，验证了显式结构引导优于仅依赖并行特征提取与隐式融合的建模方式。
+
+\subsubsection{跨轴注意力机制（CAA）的有效性}
+
+为评估不同注意力机制在高分辨率遥感场景下的性能与计算效率，本文将光学分支中的注意力模块分别替换为标准全局注意力\textsuperscript{\cite{dosovitskiy2020image}}（Standard Attention）、窗口注意力\textsuperscript{\cite{liu2021swin}}（Window Attention）以及所提出的跨轴注意力（CAA）。此外，针对 CAA 的具体计算方式，进一步对比了并行计算策略（$H \parallel W$）以及两种顺序分解策略，即宽度优先（$W\rightarrow H$）和高度优先（$H\rightarrow W$），以分析轴向计算顺序对模型性能的影响。
+
+考虑到推理时间高度依赖具体硬件平台和运行环境，难以进行跨方法的公平对比，本文采用浮点运算次数（FLOPs）作为衡量模型计算复杂度的核心指标。FLOPs 能够量化网络单次前向传播所需的理论计算开销，具有良好的硬件无关性。尤其在星载或边缘遥感应用场景中，模型部署通常受到算力与功耗预算的严格限制，因此基于 FLOPs 的复杂度评估更能真实反映算法的工程可行性。为保证对比的公平性，表~\ref{tab:ablation_attention} 中所有 FLOPs 均在相同配置条件下统计，包括特征维度为 256、注意力头数为 4、特征图尺寸为 $64\times64$，窗口注意力的窗口大小设为 16。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi 不同注意力机制与轴向计算策略消融实验结果]
+	{\wuhao 不同注意力机制与轴向计算策略消融实验结果}
+	{\wuhao Ablation results of attention mechanisms and axial strategies}
+	\label{tab:ablation_attention}
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>
+	{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}@{}}
+		\toprule[1.5pt]
+		\makecell[c]{注意力机制} & \makecell[c]{FLOPs(G)$\downarrow$} & \makecell[c]{PSNR(dB)$\uparrow$} & \makecell[c]{SSIM$\uparrow$} & \makecell[c]{SAM($^\circ$)$\downarrow$} & \makecell[c]{MAE$\downarrow$}\\
+
+		\makecell[c]{Standard Attention}& 9.237 & 29.8041 & 0.8972 & 7.9097 & 0.02531 \\
+		\makecell[c]{Window Attention}& 1.126 & 30.1116 & 0.8971 & 7.9984 & 0.02441 \\
+		\hline
+		\makecell[c]{CAA（并行计算）}& 0.585 & 30.3405 & 0.8984 & 7.8893 & 0.02392 \\
+		\makecell[c]{CAA（宽度优先）} & 0.316 & 30.3457 & 0.8982 & 7.8926 & 0.02418 \\
+		\makecell[c]{CAA（高度优先）} & \textbf{0.316} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
+		\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+表~\ref{tab:ablation_attention} 汇总了不同注意力机制及轴向计算策略的定量对比结果。可以观察到，标准全局注意力虽然具备完整的空间建模能力，但其计算复杂度高达 9.237 GFLOPs。如此高昂的计算开销不仅显著增加了训练和推理成本，也在一定程度上制约了模型的优化过程，最终未能取得最优的重建性能，其 PSNR 仅为 29.8041 dB。窗口注意力通过局部窗口划分有效降低了计算复杂度（1.126 GFLOPs），但由于不同窗口之间缺乏直接的长程交互，其在建模大尺度光谱一致性方面存在天然缺陷，导致 SAM 指标表现不佳。
+
+相比之下，本文提出的跨轴注意力机制在显著降低计算复杂度的同时，实现了更优的重建性能。CAA 通过将二维全局注意力分解为沿空间轴向的一维注意力计算，有效避免了全局注意力中高维矩阵运算带来的计算爆炸问题。在顺序分解策略下，CAA 的计算复杂度进一步降低至 0.316 GFLOPs，相比标准全局注意力减少约 29 倍，相比窗口注意力降低约 3.5 倍，同时在 PSNR、SSIM 和 SAM 等指标上均取得最优结果。
+
+进一步对不同轴向计算顺序的分析表明，并行计算策略虽然能够同时建模水平与垂直方向的上下文关系，但需要分别计算两个轴向的注意力，其 FLOPs 达到 0.585 GFLOPs，计算开销仍然高于顺序分解方案。相比之下，顺序分解策略通过将二维建模过程拆解为两个串行的一维操作，在保证信息逐步传播的同时显著降低了计算成本。
+
+本文进一步参考 Axial-DeepLab\textsuperscript{\cite{wang2020axial}} 中提出的正交分解思想，对顺序分解策略中的轴向执行顺序进行了系统比较。实验结果表明，高度方向优先的顺序分解策略在本数据集上取得了最佳性能，其 PSNR 达到 30.5503 dB，SAM 降至 7.5781°，同时保持最低的计算复杂度。这一结果表明，在遥感影像中，优先聚合垂直方向的上下文信息有助于为后续的水平方向特征传播提供更加稳定的语义基础，从而提升整体结构恢复与光谱一致性。
+
+基于上述分析，本文最终采用高度方向优先的跨轴注意力计算策略。该设计在继承正交分解高效建模优势的同时，实现了全局上下文建模能力与计算效率之间的良好平衡，为高分辨率遥感云去除任务提供了一种兼具性能与可部署性的注意力建模方案。
+
+\subsubsection{协同特征融合策略的合理性}
+
+为验证不同特征层级采用差异化融合策略的必要性，本文针对浅层与深层特征的融合模块组合方式进行了系统消融分析，相关定量结果汇总于表~\ref{tab:ablation_fusion}。通过对不同融合策略配置的对比，可以清晰地揭示融合模块功能与特征层级属性之间的内在匹配关系。
+
+\begin{table}[h]
+	\renewcommand{\arraystretch}{1.5}
+	\centering
+	\bicaption[\xiaosi 不同特征融合策略组合的消融实验结果]
+	{\wuhao 不同特征融合策略组合的消融实验结果}
+	{\wuhao Ablation results of different fusion strategy combinations}
+	\label{tab:ablation_fusion}
+	\wuhao
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}@{}}
+		\toprule[1.5pt]
+		\makecell[c]{Fusion1} &\makecell[c]{Fusion2} &\makecell[c]{Fusion3} & \makecell[c]{PSNR(dB)$\uparrow$} & \makecell[c]{SSIM$\uparrow$} & \makecell[c]{SAM($^\circ$)$\downarrow$} & \makecell[c]{MAE$\downarrow$}\\
+		\hline
+		\makecell[c]{Concat} & Concat & Concat & 28.8195 & 0.8810 & 8.7375 & 0.03232 \\
+		\makecell[c]{SAGF}& SAGF& SAGF& 29.8027 & 0.8974 & 7.8453 & 0.02516 \\
+		\makecell[c]{Concat} & Concat & CMCA& 30.1195 & 0.8979 & 7.7314 & 0.02472 \\
+		\makecell[c]{SAGF}& Concat & CMCA& 30.2255 & 0.8964 & 7.7110 & 0.02433 \\
+		\makecell[c]{Concat} & SAGF& CMCA& 30.3627 & 0.8987 & 7.8096 & 0.02408 \\
+		\makecell[c]{\textbf{SAGF}} & \textbf{SAGF} & \textbf{CMCA} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
+		\bottomrule[1.5pt]
+	\end{tabular}
+\end{table}
+
+当在浅层阶段引入空间自适应门控融合模块（SAGF）后，模型性能得到显著提升。相比全拼接方案，PSNR 提升约 0.98 dB，同时 SSIM 和 MAE 均明显改善。这一结果表明，基于空间不确定性的门控机制能够有效感知云分布与局部结构可靠性，在浅层特征中动态抑制 SAR 斑点噪声对光学纹理的干扰，从而为后续重建提供更加干净且结构一致的特征表示。
+
+进一步在深层阶段引入跨模态通道注意力模块（CMCA）后，模型性能得到进一步提升。通过对比仅使用 SAGF 的方案与最终采用 SAGF+CMCA 的配置，可以观察到 PSNR 从 29.80 dB 提升至 30.55 dB，同时 SAM 明显降低。这一改进表明，深层特征主要承载的是语义与拓扑结构信息，仅依赖空间门控已难以弥补厚云区域的语义缺失问题，而 CMCA 通过通道维度的跨模态注意力交互，能够更有效地从 SAR 特征中检索并补全缺失的高层语义结构，而非局限于像素级的局部筛选。
+
+进一步对比不同融合组合（表中第 4–6 行）可以发现，仅当浅层采用 SAGF、深层采用 CMCA 时，模型在 MAE（0.02379）和 SSIM（0.8990）等指标上同时达到最优。这一结果充分验证了分层协同融合策略的合理性：浅层特征以高频纹理与边缘信息为主，更适合采用空间门控机制进行噪声抑制与结构筛选；而深层特征更侧重语义表达与全局结构关系，适合通过跨模态注意力机制进行语义补全与拓扑恢复。
+
+需要指出的是，本文未在浅层阶段直接引入 CMCA，主要基于计算效率与特征属性两方面的综合考量。一方面，浅层特征图通常具有较高空间分辨率（如 $H/2$、$H/4$），若在该阶段执行跨模态注意力投影与高维矩阵运算，将带来显著的额外计算与显存开销，不利于大规模遥感影像训练与部署。另一方面，浅层特征中包含大量局部高频纹理，同时也伴随较强的 SAR 斑点噪声。在该阶段进行强语义对齐，容易导致注意力机制对噪声模式产生过度响应，从而引入冗余建模甚至过拟合风险。相比之下，SAGF 的空间敏感性使其更适合完成浅层“噪声抑制与结构筛选”的任务，而 CMCA 则更适合在语义更加明确的深层特征上执行“跨模态语义补全”。
+
+基于上述分析，本文最终采用浅层 SAGF 与深层 CMCA 相结合的分层协同融合策略，在结构引导、噪声抑制与语义补全之间实现了有效平衡。
+
+综合三组消融实验结果可以进一步总结如下结论：首先，SGAM 的引入表明跨模态交互应尽可能前置，通过在特征编码阶段显式注入 SAR 结构先验，可有效降低厚云区域的重建不确定性；其次，CAA 通过轴向分解在显著降低计算复杂度的同时保留了全局上下文传播能力，实现了遥感影像大尺度建模与计算效率之间的平衡；最后，分层协同融合策略证明了“融合模块功能应与特征层级属性相匹配”的设计原则，浅层门控去噪与深层语义对齐的协同作用，有效缓解了 SAR 噪声污染与语义缺失之间的矛盾，从而解释了表~\ref{tab:Table_compare} 中 SGN-CR 在 SSIM、SAM 与 MAE 等指标上的综合优势来源。
+
+\subsection{SGN-CR 实验结果综合讨论}
+
+结合前述定量评价、可视化结果以及消融实验分析，可以对 SGN-CR 在遥感图像云去除任务中的整体表现与内在机理进行进一步综合讨论。从实验结果来看，SGN-CR 在结构恢复精度、光谱一致性以及整体重建稳定性等方面均显著优于对比方法，这一性能优势并非来源于单一模块的叠加，而是多项针对性设计在不同阶段协同作用的结果。
+
+首先，从结构恢复角度分析，SGN-CR 在厚云遮挡区域能够稳定重建道路、河流及地块边界等几何结构，这与 SAR 结构先验在特征编码阶段的早期介入密切相关。与多数仅在融合阶段引入 SAR 信息的方法不同，SGN-CR 通过 SAR 引导注意力调制机制（SGAM），在光学分支特征提取过程中显式引入结构约束，使光学特征在编码初期即感知潜在地物轮廓。这种“编码阶段引导”的设计有效避免了无约束纹理推断带来的结构漂移问题，为后续重建奠定了稳定的几何基础。
+
+其次，从光谱保持与噪声抑制的角度来看，实验结果表明，SGN-CR 在引入 SAR 信息的同时并未造成光谱失真或噪声放大，这一点在 SAM 与 MAE 指标以及可视化结果中均得到验证。其关键原因在于模型采用了层级协同的跨模态特征融合策略：在浅层阶段通过空间自适应门控融合模块（SAGF）对 SAR 特征进行选择性注入，有效抑制斑点噪声向光学特征的传播；在深层阶段则利用跨模态交叉注意力模块（CMCA）完成语义层面的结构补全。这种分层匹配的融合方式避免了单一融合所带来的干扰，使结构引导与光谱保真之间达到较好的平衡。
+
+再次，从全局建模能力与计算效率的综合表现来看，跨轴注意力机制（CAA）在实验中展现出明显优势。消融实验结果表明，CAA 在显著降低计算复杂度的同时，仍能够有效捕获长程空间依赖关系，从而提升大范围云遮挡区域的语义一致性。这一现象说明，在高分辨率遥感影像场景下，采用轴向分解的全局建模方式能够在性能与效率之间取得更合理的折中，为复杂场景下的云去除任务提供了一种可行的建模思路。
+
+综合来看，SGN-CR 的性能提升并非依赖单一模块的增强，而是源于整体架构层面的协同设计：SAR 结构先验通过早期引导约束光学特征生成方向，分层融合策略在不同特征层级上实现噪声抑制与语义补全，而高效的全局建模机制进一步增强了模型在大尺度遮挡场景下的稳定性。这种从“编码—引导—融合—建模”多个环节协同优化的设计，使得 SGN-CR 能够在复杂云遮挡条件下实现结构一致、光谱可信且稳定可靠的去云重建结果。
+
+上述综合实验结果充分验证了本文提出方法在遥感图像云去除任务中的有效性，也为后续轻量化设计与工程化应用提供了明确的性能基准和结构依据。
+
+\section{本章小结}
+
+本章围绕所提出的 SGN-CR 遥感图像云去除方法，从实验设计、定量评价、可视化分析以及消融实验等多个角度，对模型的整体性能与关键结构设计进行了系统验证与分析。实验结果表明，SGN-CR 在复杂云遮挡场景下能够同时兼顾结构一致性、光谱保真性与重建稳定性，在多项评价指标上均优于现有代表性方法，验证了所提出方法的有效性。
+
+通过定量实验与可视化结果可以看出，SGN-CR 在厚云区域表现出更强的结构恢复能力，能够稳定重建道路、地块边界等几何结构，同时保持较为自然的光谱分布。进一步的消融实验表明，该性能提升并非源于单一模块，而是由多项针对性设计协同作用的结果。其中，SAR 引导注意力调制机制在特征编码阶段引入显式结构约束，有效抑制了云噪声对光学特征建模的干扰；层级协同的跨模态特征融合策略在不同特征层级上实现了噪声抑制与语义补全的合理分工；跨轴注意力机制则在保证全局建模能力的同时显著降低了计算复杂度，为大尺度遥感场景下的高效建模提供了可行方案。
+
+综合分析可知，SGN-CR 的优势来源于整体架构层面的系统性设计，而非简单的网络堆叠或参数扩展。通过在编码、引导、融合与全局建模等多个阶段引入针对遥感云去除任务特性的结构约束与信息交互机制，模型能够在复杂遮挡条件下实现更加可靠的去云重建。
+
+需要指出的是，尽管 SGN-CR 在性能上取得了较为理想的结果，其双分支异构结构与多模块协同设计也不可避免地带来了较高的计算复杂度和参数规模。这在一定程度上限制了模型在资源受限场景下的部署与应用。基于此，下一章将在本章实验结果与结构分析的基础上，进一步探讨 SGN-CR 的轻量化设计思路，提出面向高效推理的 Lite-SGN-CR 网络结构，以在保证去云性能的前提下降低计算开销。
+
+\section{引用参考文献}
+参考文献引用示例：单篇引用\textsuperscript{\cite{ref1}}，单篇多次引用\textsuperscript{\cite{ref1}55}，多篇同处引用\textsuperscript{\cite{ref1,ref2,ref3,ref13}}
