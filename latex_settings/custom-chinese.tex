@@ -28,7 +28,10 @@
 \usepackage{tikz}
 \usepackage{array}     % m{} 需要
 \usepackage{pgfplots}
-
+\pgfplotsset{compat=1.18}
+\usepackage{pgfplotstable}
+\usepackage{caption}
+\usepackage{subcaption}
 \AtBeginDocument{\DeclareMathAlphabet{\mathbf}{OT1}{cmr}{bx}{n}}
 
 
@@ -168,14 +171,14 @@
     \fancyhf{}
     \fancyfoot[C]{\songti\xiaowu \thepage}
     \fancyhead[CO]{\songti\wuhao \rightmark}
-    \fancyhead[CE]{\songti\wuhao 重庆邮电大学博士学位论文}
+    \fancyhead[CE]{\songti\wuhao 重庆邮电大学硕士学位论文}
 }
 
 \fancypagestyle{others}{
 	\fancyhf{}
 	\fancyfoot[C]{\songti\xiaowu \thepage}
 	\fancyhead[CO]{\songti\wuhao \leftmark}
-	\fancyhead[CE]{\songti\wuhao 重庆邮电大学博士学位论文}
+	\fancyhead[CE]{\songti\wuhao 重庆邮电大学硕士学位论文}
 }
 
 

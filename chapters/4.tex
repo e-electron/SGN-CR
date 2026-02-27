@@ -2,6 +2,7 @@
 
 
 
+\pgfplotsset{compat=1.18}
 
 \newcommand{\incC}[2]{% 
     \begin{tikzpicture}[inner sep=0]
@@ -186,7 +187,7 @@ Lite-SGN-CR 的设计目标主要体现在三个方面。首先，在保证网�
 
 \subsubsection{深度可分离卷积的原理与适用性分析}
 
-深度可分离卷积\textsuperscript{\cite{chollet2017xception,howard2017mobilenets}}是一种将标准卷积操作分解为深度卷积（Depthwise Convolution, DWConv）和逐点卷积（Pointwise Convolution, PWConv）的轻量化卷积形式，主要用于减少模型的参数量和计算量。
+深度可分离卷积\textsuperscript{\cite{chollet2017xception,howard2019searching}}是一种将标准卷积操作分解为深度卷积（Depthwise Convolution, DWConv）和逐点卷积（Pointwise Convolution, PWConv）的轻量化卷积形式，主要用于减少模型的参数量和计算量。
 具体来说，深度可分离卷积将标准卷积重新分解为两个步骤:
 首先 DWConv 对输入的每一个通道独立使用一个 $ K \times K $ 的卷积核进行空间特征提取，由于每个卷积核仅作用于一个通道，该步骤并不改变特征图的通道数。
 然后 PWConv 利用 $ 1 \times 1 $ 的卷积核将 DWConv 输出的特征图在深度方向上进行线性组合，该步骤主要负责通道间的信息融合与维度变换，从而实现跨通道的信息融合与特征重构。
@@ -301,7 +302,7 @@ PWConv 看做混合器 ，作用是特征融合。它同时看着同一个像素
 
 \subsubsection{渐进式去云思想}
 
-渐进式学习与递归细化思想\textsuperscript{\cite{kim2016deeply}}在图像修复与图像恢复等重建类任务中被广泛采用，其核心理念是将复杂重建过程划分为多个逐步逼近的阶段，通过多次迭代不断修正当前估计结果，从而提升整体恢复的稳定性与精细度。相比单次前向预测，递归细化能够在前一阶段结果的基础上持续减少残留误差，使模型在复杂场景下获得更加可靠的重建效果。
+渐进式学习与递归细化思想在图像修复与图像恢复等重建类任务中被广泛采用，其核心理念是将复杂重建过程划分为多个逐步逼近的阶段，通过多次迭代不断修正当前估计结果，从而提升整体恢复的稳定性与精细度。相比单次前向预测，递归细化能够在前一阶段结果的基础上持续减少残留误差，使模型在复杂场景下获得更加可靠的重建效果。
 
 在遥感图像云去除任务中，云层厚度、空间分布形态及其与地物结构之间的耦合关系具有明显差异。对于薄云或局部遮挡区域，单次推理通常能够获得较为理想的恢复结果；然而在厚云覆盖或边界结构复杂的区域，一次去云过程往往难以同时完成大尺度结构补全与局部细节修复。因此，将去云过程建模为一个逐步逼近的重建问题，在理论上更符合实际场景中的误差分布特性。
 
@@ -790,6 +791,333 @@ P4: P3 + Lite-CMCA & 6.60 & 27.0 & 30.50 & 0.8984 \\
 从结果可以观察到，当 $T$ 从 1 增加至 2 时，PSNR 提升约 0.58 dB，表明首次递归细化能够显著修正单次预测中的残余误差。随着迭代次数进一步增加，性能继续提升但增幅逐渐减缓，表现出明显的收益递减趋势。当 $T \ge 4$ 时，各项指标基本趋于饱和，部分指标出现轻微波动，说明过多迭代可能在局部区域引入额外扰动而难以带来稳定增益。这一现象可能源于递归更新过程中误差的逐步传播与累积。当模型在已接近收敛状态下继续进行全局修正时，局部区域的微小偏差可能被反复放大，从而导致整体指标难以进一步提升甚至出现轻微回落。
 
 与此同时，推理阶段的 FLOPs 与延迟时间随 $T$ 近似线性增长。当阶段数由 1 增加至 5 时，计算量与推理时间约提升至原来的 5 倍，说明渐进式性能提升是以线性计算代价为前提实现的。
+
+\begin{figure}[!htbp]
+\centering
+\bicaption[\xiaosi 不同渐进阶段数下的性能与计算复杂度变化趋势]
+{\wuhao 不同渐进阶段数下的性能与计算复杂度变化趋势}
+{\wuhao Performance and computational cost under different progressive stages}
+\label{fig:stage_combined}
+
+% ---------- (a) 性能 ----------
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\begin{tikzpicture}
+
+% ---------------- 左轴：PSNR ----------------
+\begin{axis}[
+    scale only axis,
+    width=\linewidth,
+    height=6.2cm,
+    ylabel={PSNR (dB)},
+    xmin=1, xmax=5,
+    xtick={1,2,3,4,5},
+    ymin=29.75, ymax=30.85,
+    grid=both,
+    grid style={line width=.2pt, draw=gray!30},
+]
+\addplot[black, thick, mark=*] coordinates {
+  (1,29.84) (2,30.42) (3,30.68) (4,30.75) (5,30.34)
+};
+\end{axis}
+
+% ---------------- 右轴：SSIM ----------------
+\begin{axis}[
+    scale only axis,
+    width=\linewidth,
+    height=6.2cm,
+    xmin=1, xmax=5,
+    xtick=\empty,
+    axis x line=none,
+    axis y line*=right,
+    ylabel={SSIM},
+    ylabel style={xshift=8pt}, % 右轴标签往右挪，避免与右图左轴挤
+    ymin=0.890, ymax=0.900,
+    ytick={0.890,0.892,0.894,0.896,0.898,0.900},
+    yticklabel style={
+        /pgf/number format/fixed,
+        /pgf/number format/precision=3
+    },
+]
+\addplot[black, thick, dashed, mark=square*] coordinates {
+  (1,0.8912) (2,0.8968) (3,0.8991) (4,0.8998) (5,0.8998)
+};
+
+% 右下角 x 轴标题
+\node[anchor=south east] at (axis cs:5,0.890) {\small 渐进阶段数};
+\end{axis}
+
+% legend（保持你的样式，定位用 linewidth）
+\node[draw, fill=white, inner sep=4pt, anchor=north] at (0.40\linewidth,-0.70cm) {%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    % PSNR: 实线+圆点
+    \draw[black, thick] (0,0) -- (0.9,0);
+    \fill (0.5,0) circle (2.0pt);
+    \node[anchor=west] at (1.05,0) {PSNR};
+
+    % SSIM: 虚线+方块
+    \draw[black, thick, dashed] (2.25,0) -- (3.15,0);
+    \fill (2.70,-0.05) rectangle ++(0.14,0.14);
+    \node[anchor=west] at (3.1,0) {SSIM};
+  \end{tikzpicture}%
+};
+
+\end{tikzpicture}
+
+\vspace{-0.2cm}
+{\wuhao (a) 性能变化趋势}
+\end{minipage}%
+\hspace{0.02\textwidth}
+% ---------- (b) 复杂度 ----------
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\begin{tikzpicture}
+
+% ---------------- 左轴：FLOPs ----------------
+\begin{axis}[
+      scale only axis,
+      width=\linewidth,
+      height=6.2cm,
+      ylabel={FLOPs (G)},
+      ylabel style={xshift=-8pt}, % 左轴标签往左挪，避免与左图右轴挤
+      xmin=1, xmax=5,
+      xtick={1,2,3,4,5},
+      ymin=0, ymax=100,
+      ytick={0,20,40,60,80,100},
+      grid=both,
+      grid style={line width=.2pt, draw=gray!30},
+]
+\addplot[black, thick, mark=*] coordinates {
+  (1,18.6) (2,37.2) (3,55.8) (4,74.4) (5,92.0)
+};
+\end{axis}
+
+% ---------------- 右轴：Latency ----------------
+\begin{axis}[
+      scale only axis,
+      width=\linewidth,
+      height=6.2cm,
+      xmin=1, xmax=5,
+      xtick=\empty,
+      axis x line=none,
+      axis y line*=right,
+      ylabel={Latency (ms)},
+      ymin=0, ymax=260,
+      ytick={0,50,100,150,200,250},
+]
+\addplot[black, thick, dashed, mark=square*] coordinates {
+  (1,42.3) (2,84.5) (3,126.9) (4,169.4) (5,239.1)
+};
+
+% 右下角 x 轴标题
+\node[anchor=south east] at (axis cs:5,0) {\small 渐进阶段数};
+\end{axis}
+
+% legend（与左图一致）
+\node[draw, fill=white, inner sep=4pt, anchor=north] at (0.40\linewidth,-0.70cm) {%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    % FLOPs: 实线+圆点
+    \draw[black, thick] (0,0) -- (0.9,0);
+    \draw[black, thick] plot[mark=*, mark size=2pt] coordinates {(0.5,0)};
+    \node[anchor=west] at (1.05,0) {FLOPs};
+
+    % Latency: 虚线+方块
+    \draw[black, thick, dashed] (2.25,0) -- (3.15,0);
+    \draw[black, thick] plot[mark=square*, mark size=2.0pt] coordinates {(2.70,0)};
+    \node[anchor=west] at (3.20,0) {Latency};
+  \end{tikzpicture}%
+};
+
+\end{tikzpicture}
+
+\vspace{-0.2cm}
+{\wuhao (b) 计算复杂度变化趋势}
+\end{minipage}
+
+\end{figure}
+
+
+\begin{figure}[!htbp]
+\centering
+\bicaption[\xiaosi 不同渐进阶段数下的重建性能变化趋势]
+{\wuhao 不同渐进阶段数下的重建性能变化趋势}
+{\wuhao Performance variation under different progressive stages}
+\label{fig:stage_performance}
+
+\begin{tikzpicture}
+
+% ---------------- 左轴：PSNR ----------------
+\begin{axis}[
+    width=\linewidth,
+    height=6.2cm,
+    ylabel={PSNR (dB)},
+    xmin=1, xmax=5,
+    xtick={1,2,3,4,5},
+    ymin=29.75, ymax=30.85,
+    grid=both,
+    grid style={line width=.2pt, draw=gray!30},
+]
+\addplot[black, thick, mark=*] coordinates {
+  (1,29.84) (2,30.42) (3,30.68) (4,30.75) (5,30.34)
+};
+\end{axis}
+
+% ---------------- 右轴：SSIM ----------------
+\begin{axis}[
+    width=\linewidth,
+    height=6.2cm,
+    xmin=1, xmax=5,
+    xtick=\empty,
+    axis x line=none,
+    axis y line*=right,
+    ylabel={SSIM},
+    ymin=0.890, ymax=0.900,
+    ytick={0.890,0.892,0.894,0.896,0.898,0.900},
+    yticklabel style={
+        /pgf/number format/fixed,
+        /pgf/number format/precision=3
+    },
+]
+\addplot[black, thick, dashed, mark=square*] coordinates {
+  (1,0.8912) (2,0.8968) (3,0.8991) (4,0.8998) (5,0.8998)
+};
+
+% 右下角 x 轴标题
+\node[anchor=south east] at (axis cs:5,0.890) {\small 渐进阶段数};
+\end{axis}
+
+\node[draw, fill=white, inner sep=4pt, anchor=north] at (0.40\linewidth,-0.70cm) {%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    % PSNR: 实线+圆点
+    \draw[black, thick] (0,0) -- (0.9,0);
+    \fill (0.5,0) circle (2.0pt);
+    \node[anchor=west] at (1.05,0) {PSNR};
+
+    % SSIM: 虚线+方块
+    \draw[black, thick, dashed] (2.25,0) -- (3.15,0);
+    \fill (2.70,-0.05) rectangle ++(0.14,0.14);
+    \node[anchor=west] at (3.1,0) {SSIM};
+  \end{tikzpicture}%
+};
+\end{tikzpicture}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \bicaption[\xiaosi 不同渐进阶段数下的计算复杂度增长趋势]
+  {\wuhao 不同渐进阶段数下的计算复杂度增长趋势}
+  {\wuhao Computational cost under different progressive stages}
+  \label{fig:stage_cost}
+
+  \begin{tikzpicture}
+
+    % ---------------- 左轴：FLOPs ----------------
+    \begin{axis}[
+      width=0.86\textwidth,
+      height=6.2cm,
+      ylabel={FLOPs (G)},
+      xmin=1, xmax=5,
+      xtick={1,2,3,4,5},
+      ymin=0, ymax=100,
+      ytick={0,20,40,60,80,100},
+      grid=both,
+      grid style={line width=.2pt, draw=gray!30},
+    ]
+      \addplot[black, thick, mark=*] coordinates {
+        (1,18.6) (2,37.2) (3,55.8) (4,74.4) (5,92.0)
+      };
+    \end{axis}
+
+    % ---------------- 右轴：Latency ----------------
+    \begin{axis}[
+      width=0.86\textwidth,
+      height=6.2cm,
+      xmin=1, xmax=5,
+      xtick=\empty,
+      axis x line=none,
+      axis y line*=right,
+      ylabel={Latency (ms)},
+      ymin=0, ymax=260,
+      ytick={0,50,100,150,200,250},
+    ]
+      \addplot[black, thick, dashed, mark=square*] coordinates {
+        (1,42.3) (2,84.5) (3,126.9) (4,169.4) (5,239.1)
+      };
+
+      % 右下角 x 轴标题（与图4-7一致）
+      \node[anchor=south east] at (axis cs:5,0) {\small 渐进阶段数};
+    \end{axis}
+
+    % 你第一张是 (0.40\textwidth,-0.70cm)，这里也保持一致
+    \node[draw, fill=white, inner sep=4pt, anchor=north] at (0.40\textwidth,-0.70cm) {%
+      \begin{tikzpicture}[baseline=-0.6ex]
+        % FLOPs: 实线+圆点
+        \draw[black, thick] (0,0) -- (0.9,0);
+        \draw[black, thick] plot[mark=*, mark size=2pt] coordinates {(0.5,0)};
+        \node[anchor=west] at (1.05,0) {FLOPs};
+
+        % Latency: 虚线+方块（用 square* marker，更像曲线上方块）
+        \draw[black, thick, dashed] (2.5,0) -- (3.3,0);
+        \draw[black, thick] plot[mark=square*, mark size=2.0pt] coordinates {(2.9,0)};
+        \node[anchor=west] at (3.20,0) {Latency};
+      \end{tikzpicture}%
+    };
+
+  \end{tikzpicture}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \bicaption[\xiaosi 渐进阶段数的性能—复杂度权衡关系]
+  {\wuhao 渐进阶段数的性能—复杂度权衡关系}
+  {\wuhao Performance-complexity trade-off of progressive stages}
+  \label{fig:stage_tradeoff}
+
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.78\textwidth,
+      height=6.2cm,
+      xlabel={FLOPs (G)},
+      ylabel={PSNR (dB)},
+      xmin=15, xmax=100,
+      ymin=29.7, ymax=30.85,
+      grid=both,
+      grid style={line width=.2pt, draw=gray!30},
+      axis line style={line width=0.8pt},
+      tick style={line width=0.8pt},
+      clip=false, % allow labels slightly outside plot without clipping
+    ]
+
+      \addplot[black, thick, solid, mark=*, mark size=2.3pt] coordinates {
+        (18.6,29.84)
+        (37.2,30.42)
+        (55.8,30.68)
+        (74.4,30.75)
+        (92.0,30.34)
+      };
+
+      % Labels with offsets (no overlap with points/line)
+      \node[anchor=north east] at (axis cs:18.6,29.84) {\small S1};
+      \node[anchor=south west] at (axis cs:37.2,30.42) {\small S2};
+      \node[anchor=south west] at (axis cs:55.8,30.68) {\small S3};
+      \node[anchor=south]      at (axis cs:74.4,30.75) {\small S4};
+      \node[anchor=north west] at (axis cs:92.0,30.34) {\small S5};
+
+    \end{axis}
+  \end{tikzpicture}
+\end{figure}
+
+从图~\ref{fig:stage_performance} 可以看出，随着渐进阶段数由 1 增加至 4，PSNR 与 SSIM 指标均呈现稳定上升趋势。其中，PSNR 从 29.84~dB 提升至 30.75~dB，SSIM 从 0.8912 提升至 0.8998，表明多阶段递归细化能够逐步修正残余云区误差，并增强重建结果的结构一致性与纹理细节表达能力。
+
+从机理上分析，渐进式策略通过参数共享的多阶段重建方式，使网络在每一阶段对前一阶段输出进行残差补偿与细节优化。初始阶段主要恢复整体结构信息，而后续阶段则进一步细化高频纹理与光谱特征，因此性能随阶段数增加而持续提升。然而，当阶段数增加至 5 时，PSNR 出现下降趋势，而 SSIM 基本保持稳定，说明过多的递归迭代可能引入误差累积或过度平滑现象，从而削弱重建质量。
+
+综合来看，4 阶段在性能提升与稳定性之间取得了较优平衡。
+
+图~\ref{fig:stage_cost} 展示了不同渐进阶段数下计算复杂度的变化情况。可以观察到，FLOPs 与推理延迟（Latency）均随阶段数呈近似线性增长趋势。这是由于各阶段共享同一组网络参数，但前向传播次数随阶段数增加而等比例叠加，因此总体计算量呈线性放大。
+
+具体而言，当阶段数由 1 增至 5 时，FLOPs 从 18.6~G 增至 92.0~G，Latency 从 42.3~ms 增至 239.1~ms，增长幅度显著。该结果验证了渐进式策略在不增加模型参数规模的前提下，通过增加推理轮次换取性能提升的特性。
+
+因此，渐进阶段数的选择本质上体现为重建性能与计算代价之间的权衡问题。
 
 综合考虑性能收益与计算开销，本研究选择 $T=3$ 作为默认推理设置。在该配置下，模型在保持可控计算复杂度的同时获得较为稳定且显著的性能提升。
 
