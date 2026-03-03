@@ -430,13 +430,6 @@ F_{fuse}^{(h)} = A + F_{opt}^{(h)}
 
 \begin{figure*}[htbp]
 	\centering
-		\bicaption[\xiaosi SGAM 模块消融实验可视化结果]
-	{\wuhao SGAM 模块消融实验可视化结果}
-	{\wuhao Visualization results of SGAM module ablation experiments}
-	\label{fig:SGAM-ablation}
-	\renewcommand{\arraystretch}{1.2}
-	\wuhao
-	
 	\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} ccccc @{}}
 		\includegraphics[width=0.18\textwidth]{chapters/figure3/sar.png} &
 		\includegraphics[width=0.18\textwidth]{chapters/figure3/cloudy.png} &
@@ -454,7 +447,7 @@ F_{fuse}^{(h)} = A + F_{opt}^{(h)}
 		\includegraphics[width=0.18\textwidth]{chapters/compare_img/Opt-Cloudy/ROIs1158_spring_31_p189.png} &
 		\includegraphics[width=0.18\textwidth]{chapters/compare_img/Ground Truth/ROIs1158_spring_31_p189.png} &
 		\includegraphics[width=0.18\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_31_p189.png} &
-		\includegraphics[width=0.18\textwidth]{chapters/compare_img/ours/ROIs1158_spring_31_p189.png} \\[-3ex]
+		\includegraphics[width=0.18\textwidth]{chapters/compare_img/ours/ROIs1158_spring_31_p189.png} \\[0.8ex]
 		
 		\makecell[c]{\wuhao SAR} &
 		\makecell[c]{\wuhao Cloudy} &
@@ -462,6 +455,12 @@ F_{fuse}^{(h)} = A + F_{opt}^{(h)}
 		\makecell[c]{\wuhao 无 SGAM} &
 		\makecell[c]{\wuhao 有 SGAM} \\[0.8ex]  
 \end{tabular*}
+	\bicaption[\xiaosi SGAM 模块消融实验可视化结果]
+	{\wuhao SGAM 模块消融实验可视化结果}
+	{\wuhao Visualization results of SGAM module ablation experiments}
+	\label{fig:SGAM-ablation}
+	\renewcommand{\arraystretch}{1.2}
+	\wuhao
 \end{figure*}
 
 从图~\ref{fig:SGAM-ablation} 的可视化结果可以进一步验证上述定量分析结论。在无 SGAM 的情况下，模型在厚云遮挡区域的重建结果普遍存在结构模糊与边界连续性不足的问题。以第一行样例为例，道路与河流等线性结构出现明显的轮廓扩散与轻微偏移；在第二行山地区域，山脊纹理细节恢复不充分，局部区域呈现过度平滑现象；第三行农田场景中，规则地块边界的几何形态存在一定程度的形变与对比度下降。这些现象表明，在缺乏显式结构引导的情况下，光学分支主要依赖局部纹理信息进行重建，当原始光学影像受云层严重遮挡时，局部特征不足以支撑大尺度结构推断，从而导致细节丢失或伪结构生成。
@@ -486,17 +485,17 @@ F_{fuse}^{(h)} = A + F_{opt}^{(h)}
 	{\wuhao Ablation results of attention mechanisms and axial strategies}
 	\label{tab:ablation_attention}
 	\wuhao
-	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>
+	\begin{tabular}{@{}>{\songti\wuhao}p{0.22\textwidth}>{\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}>
 	{\centering\arraybackslash\songti\wuhao}p{0.13\textwidth}@{}}
 		\toprule[1.5pt]
-		\makecell[c]{注意力机制} & \makecell[c]{FLOPs(G)$\downarrow$} & \makecell[c]{PSNR(dB)$\uparrow$} & \makecell[c]{SSIM$\uparrow$} & \makecell[c]{SAM($^\circ$)$\downarrow$} & \makecell[c]{MAE$\downarrow$}\\
+		注意力机制 & \makecell[c]{FLOPs(G)$\downarrow$} & \makecell[c]{PSNR(dB)$\uparrow$} & \makecell[c]{SSIM$\uparrow$} & \makecell[c]{SAM($^\circ$)$\downarrow$} & \makecell[c]{MAE$\downarrow$}\\
 
-		\makecell[c]{Standard Attention}& 9.237 & 29.8041 & 0.8972 & 7.9097 & 0.02531 \\
-		\makecell[c]{Window Attention}& 1.126 & 30.1116 & 0.8971 & 7.9984 & 0.02441 \\
+		Standard Attention& 9.237 & 29.8041 & 0.8972 & 7.9097 & 0.02531 \\
+		Window Attention& 1.126 & 30.1116 & 0.8971 & 7.9984 & 0.02441 \\
 		\hline
-		\makecell[c]{CAA（并行计算）}& 0.585 & 30.3405 & 0.8984 & 7.8893 & 0.02392 \\
-		\makecell[c]{CAA（宽度优先）} & 0.316 & 30.3457 & 0.8982 & 7.8926 & 0.02418 \\
-		\makecell[c]{CAA（高度优先）} & \textbf{0.316} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
+		CAA（并行计算）& 0.585 & 30.3405 & 0.8984 & 7.8893 & 0.02392 \\
+		CAA（宽度优先） & 0.316 & 30.3457 & 0.8982 & 7.8926 & 0.02418 \\
+		\textbf{CAA（高度优先）} & \textbf{0.316} & \textbf{30.5503} & \textbf{0.8990} & \textbf{7.5781} & \textbf{0.02379} \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
