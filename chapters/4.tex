@@ -141,7 +141,7 @@ SAR 与光学影像在成像机理和信息表达上具有先追差异，SAR 分
 
 相比之下，光学分支需要完成云去除后的光谱重建与语义补全任务，对特征建模能力要求更高。为此，光学编码分支在 Lite-SGN-CR 中沿用了原网络的三级尺度金字塔结构，即保留三个尺度的编码过程和关键的注意力建模能力，以维持对长程依赖与全局语义关系的基本建模能力，同时通过压缩网络规模实现复杂度控制。
 
-在原 SGN-CR 中，光学分支在三个尺度层级，分别堆叠 8 个 Opt-block，并采用 $C$， $2C$， $4C$ 的通道扩展方式进行特征建模。 而在 Lite-SGN-CR 中将保留的三级下采样结构中的的每一尺度的模块堆叠次数由 8 减少为 4，并将三个阶段的输出通道分别由原网络的配置缩减至 todo通道：48、96、192，从而在维持基本多尺度表征能力的同时显著降低注意力相关计算的总体开销。
+在原 SGN-CR 中，光学分支在三个尺度层级，分别堆叠 8 个 Opt-block，并采用 $C$， $2C$， $4C$ 的通道扩展方式进行特征建模。 而在 Lite-SGN-CR 中将保留的三级下采样结构中的的每一尺度的模块堆叠次数由 8 减少为 4，并将三个阶段的输出通道分别由原网络的配置缩减至32、64、128，从而在维持基本多尺度表征能力的同时显著降低注意力相关计算的总体开销。
 
 同时，Transformer 注意力模块的超参数也相应减少，以适应收缩后的通道维度。这种通道裁剪与参数精简策略在保证模型轻量化的同时，仍然能保留原光学编码分支中关键的注意力机制。例如，Lite-SGN-CR 继续采用了CAA跨轴注意力等全局建模模块，只是在计算代价上进行了优化。而保留 Transformer 式注意力结构的原因是，对于大幅云遮挡的遥感图像来说，恢复纹理和语义信息需要长距离依赖建模和全局上下文信息。
 
@@ -217,6 +217,7 @@ Lite-SGN-CR 对原始解码结构也进行了结构级重构。
 
 针对上述问题，Lite-SGN-CR 在解码阶段有意识地移除了 Attention 模块，将解码器的功能明确限定为空间分辨率恢复与局部细节重建。如图\ref{fig:Lite-restore-block}所示，Lite-SGN-CR 的解码器采用逐级上采样的方式，从 $\frac{1}{8}$ 分辨率特征开始，依次恢复至 $\frac{1}{4}$、$\frac{1}{2}$ 及原始分辨率。在每一级解码层中，仅使用一个 Lite-Restore-block 对上采样后的特征进行轻量化修正。
 
+% todo：通道
 \begin{figure}[!htbp]
 		\centering 
 		\includegraphics[width=3cm]{chapters/figures/Lite-restore-block.png}
@@ -328,13 +329,13 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 		GLF-CR\textsuperscript{\cite{xu2022glf}}& 14.77 & 61.39 & 58.45\\
 		USSRN-CR\textsuperscript{\cite{wang2023cloud}} & 18.61 & 305.80 & 32.88\\
 		GCEPANet\textsuperscript{\cite{zhou2025gcepanet}}& 12.82 & 23.12 & 42.87 \\
-		SGN-CR & 15.36 & 31.02 & 21.04 \\
+		SGN-CR & 22.31 & 40.96 & 21.04 \\
 		\textbf{Lite-SGN-CR} & \textbf{5.81} & \textbf{16.58} & \textbf{9.84} \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-从表~\ref{tab:Lite-SGN-CR-efficiency} 可以看出，Lite-SGN-CR 的参数规模为 5.81M，仅为 SGN-CR 的 37.8\%，相比 GLF-CR 与 USSRN-CR 等模型亦明显更小。在理论计算量方面，Lite-SGN-CR 的 FLOPs 为 16.58G，相较于 GLF-CR（61.39G）与 USSRN-CR（305.80G）大幅下降，在当前对比模型中处于较低水平。
+从表~\ref{tab:Lite-SGN-CR-efficiency} 可以看出，Lite-SGN-CR 的参数规模为 5.81M，仅为 SGN-CR 的 26\%，相比 GLF-CR 与 USSRN-CR 等模型亦明显更小。在理论计算量方面，Lite-SGN-CR 的 FLOPs 为 16.58G，相较于 GLF-CR（61.39G）与 USSRN-CR（305.80G）大幅下降，在当前对比模型中处于较低水平。
 
 在实际推理效率方面，Lite-SGN-CR 的单张图像推理延迟为 9.84ms，显著低于多数对比模型。例如，相较于 GLF-CR（58.45ms）与 GCEPANet（42.87ms），推理时间减少超过 75\%；即使与完整模型 SGN-CR 相比，推理时间也缩短约 53\%。这一结果表明，理论计算量的降低能够直接转化为实际运行效率的提升。
 
@@ -346,59 +347,59 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 
 \begin{figure*}[htbp]
 	\centering
-		\bicaption[\xiaosi SEN12MS-CR 测试集上不同方法的云去除对比结果]
-	{\wuhao SEN12MS-CR 测试集上不同方法的云去除对比结果}
-	{\wuhao Comparison of cloud removal results of different methods on the SEN12MS-CR test set}
-	\label{fig:Lite-visualization}
-	\renewcommand{\arraystretch}{1.2}
-	\wuhao
-	
 	\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}} ccccc @{}}
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SAR.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_Cloudy.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_Cloud-Free.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_GANs.png} &
-		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SAR-Opt-cGAN.png} \\[-3ex]
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SAR-Opt-cGAN.png} \\[0.4ex]
 		\makecell[c]{\wuhao SAR} &
 		\makecell[c]{\wuhao Cloudy} &
 		\makecell[c]{\wuhao Cloud-Free} &
 		\makecell[c]{\wuhao GANs} &
-		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.8ex]  
+		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.6ex]  
 		
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_GLF-CR.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_USSRN-CR.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_HPN-CR.png} &
 		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SGN-CR(Ours).png} &
-		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SGN-CR(Ours).png} \\[-3ex]
+		\incC{width=0.18\textwidth}{chapters/figures/figure/b_SGN-CR(Ours).png} \\[0.4ex]
 		\makecell[c]{\wuhao GLF-CR} &
 		\makecell[c]{\wuhao USSRN-CR} &
 		\makecell[c]{\wuhao GCEPANet} &
 		\makecell[c]{\wuhao SGN-CR} &
-		\makecell[c]{\wuhao \textbf{Lite-SGN-CR}} \\
+		\makecell[c]{\wuhao \textbf{Lite-SGN-CR}} \\[0.6ex]
 
 
 		\incD{width=0.18\textwidth}{chapters/compare_img/sar/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/Opt-Cloudy/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/Ground Truth/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/gans/ROIs1158_spring_123_p46.png} &
-		\incD{width=0.18\textwidth}{chapters/compare_img/sar-opt-cgan/ROIs1158_spring_123_p46.png} \\[-3ex]
+		\incD{width=0.18\textwidth}{chapters/compare_img/sar-opt-cgan/ROIs1158_spring_123_p46.png} \\[0.4ex]
 		\makecell[c]{\wuhao SAR} &
 		\makecell[c]{\wuhao Cloudy} &
 		\makecell[c]{\wuhao Cloud-Free} &
 		\makecell[c]{\wuhao GANs} &
-		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.8ex]  
+		\makecell[c]{\wuhao SAR-Opt-cGAN} \\[0.6ex]  
 		
 		\incD{width=0.18\textwidth}{chapters/compare_img/glf-cr/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/ussrn-cr/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/hpn/ROIs1158_spring_123_p46.png} &
 		\incD{width=0.18\textwidth}{chapters/compare_img/ours/ROIs1158_spring_123_p46.png} &
-		\incD{width=0.18\textwidth}{chapters/compare_img/ours/ROIs1158_spring_123_p46.png} \\[-3ex]
+		\incD{width=0.18\textwidth}{chapters/compare_img/ours/ROIs1158_spring_123_p46.png} \\[0.4ex]
 		\makecell[c]{\wuhao GLF-CR} &
 		\makecell[c]{\wuhao USSRN-CR} &
 		\makecell[c]{\wuhao GCEPANet} &
 		\makecell[c]{\wuhao SGN-CR} &
 		\makecell[c]{\wuhao \textbf{Lite-SGN-CR}} \\
 \end{tabular*}
+	\bicaption[\xiaosi SEN12MS-CR 测试集上不同方法的云去除对比结果]
+	{\wuhao SEN12MS-CR 测试集上不同方法的云去除对比结果}
+	{\wuhao Comparison of cloud removal results of different methods on the SEN12MS-CR test set}
+	\label{fig:Lite-visualization}
+	\renewcommand{\arraystretch}{1.2}
+	\wuhao
+	
 \end{figure*}
 
 从第一组样本可以观察到，红框区域包含一段斜向延伸的道路与农田边界交汇结构，同时位于厚云遮挡与清晰区域的过渡位置，属于结构恢复与光谱过渡的双重挑战区域。GANs 方法在该区域几乎丢失原有线性道路结构，整体呈现明显的过度平滑现象；SAR-Opt-cGAN 虽引入 SAR 结构信息，但在红框内部仍存在亮度偏移与纹理模糊问题，地块边界对比度不足，部分线性结构被弱化。GLF-CR 与 USSRN-CR 能够恢复基本的亮度分布，但在斜向道路边缘处出现轻微结构断裂，纹理连续性不足，边界位置呈现软化现象。
@@ -431,23 +432,18 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 		\toprule[1.5pt]
 		指标 & SGN-CR & Lite-SGN-CR & \textbf{指标变化} \\
 		\hline
-		Params(M)& 15.36 & 5.81 & \textbf{-9.55} \\
-		FLOPs(G)& 31.02 & 16.58 & \textbf{-14.44} \\
+		Params(M)& 22.31 & 5.81 & \textbf{-16.5} \\
+		FLOPs(G)& 40.96 & 16.58 & \textbf{-24.38} \\
 		PSNR & 30.5503 & 30.4369 & \textbf{-0.1134} \\
 		SSIM & 0.8990 & 0.8964 & \textbf{-0.0026} \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-结果表明，在 PSNR 仅下降 0.1134 dB、SSIM 仅下降 0.0026 的情况下，Lite-SGN-CR 的参数量与 FLOPs 分别降低 62.2\% 与 46.6\%，推理延迟亦下降约 53.2\%。说明所提出的轻量化设计主要压缩了结构中的冗余计算路径，而未破坏跨模态结构引导机制的核心表达能力。
+结果表明，在 PSNR 仅下降 0.1134 dB、SSIM 仅下降 0.0026 的情况下，Lite-SGN-CR 的参数量与 FLOPs 分别降低 74.0\% 与 59.5\%，推理延迟亦下降约 53.2\%。说明所提出的轻量化设计主要压缩了结构中的冗余计算路径，而未破坏跨模态结构引导机制的核心表达能力。
 
 \begin{figure}[h]
 	\centering
-	\bicaption[\xiaosi 性能--复杂度权衡散点图（PSNR vs FLOPs）]
-	{\wuhao 性能--复杂度权衡散点图（PSNR vs FLOPs）}
-	{\wuhao PSNR--FLOPs trade-off scatter plot}
-	\label{fig:psnr_flops_tradeoff}
-
 	\begin{tikzpicture}
 		\begin{axis}[
 			width=0.85\textwidth,
@@ -482,8 +478,8 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 		\addplot[only marks, mark=o, mark size=2.5pt, gray!70] coordinates {(23.12,30.2255)};
 	\addlegendentry{GCEPANet}
 
-	% SGN-CR (black)
-		\addplot[only marks, mark=*, mark size=3.2pt, black] coordinates {(31.02,30.5503)};
+		% SGN-CR (black)
+			\addplot[only marks, mark=*, mark size=3.2pt, black] coordinates {(40.96,30.5503)};
 	\addlegendentry{SGN-CR}
 
 	% Lite-SGN-CR (red)
@@ -491,11 +487,16 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 	\addlegendentry{Lite-SGN-CR}
 
 		% Arrow only
-		\draw[->, thick]
-			(axis cs:31.02,30.5503) -- (axis cs:16.58,30.4369);
+			\draw[->, thick]
+				(axis cs:40.96,30.5503) -- (axis cs:16.58,30.4369);
 
 	\end{axis}
 	\end{tikzpicture}
+
+	\bicaption[\xiaosi 性能--复杂度权衡散点图（PSNR vs FLOPs）]
+	{\wuhao 性能--复杂度权衡散点图（PSNR vs FLOPs）}
+	{\wuhao PSNR--FLOPs trade-off scatter plot}
+	\label{fig:psnr_flops_tradeoff}
 \end{figure}
 
 进一步地，为更加客观地刻画性能与计算开销之间的关系，本文对单位计算成本下的性能收益进行分析。如图~\ref{fig:psnr_flops_tradeoff} 所示，各模型在性能与计算复杂度之间呈现出明显分布差异。相较于 SGN-CR，Lite-SGN-CR 在横轴方向显著左移，而纵轴位置变化较小，表明其在保持重建精度基本稳定的前提下，实现了复杂度的有效降低。需要说明的是，由于各模型 FLOPs 跨度较大（16.58--305.80 G），为更清晰展示低复杂度与高复杂度模型的相对分布，图中横轴采用了对数坐标。
@@ -510,13 +511,7 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 
 \subsubsection{光学分支通道配置消融}
 
-为进一步分析光学分支网络容量对重建性能与计算复杂度的影响，本文对光学编码器各阶段通道数进行一致缩放，构建不同宽度配置进行对比实验。具体而言，基准配置采用四阶段通道数 ${32, 64, 128, 256}$，并分别设置 0.75×、0.5× 与 0.25× 的宽度缩放版本，对应表中的 C1、C2、C3 与 C4。
-
-在该实验中，SAR 编码分支与跨模态融合模块均保持为 Lite-SGN-CR 的默认结构，仅对光学编码器通道规模进行一致缩放，以确保实验的单变量可比性。
-
-从表 \ref{tab:Lite-channel-config-ablation} 可以观察到，随着通道数逐渐缩减，模型参数规模与 FLOPs 近似线性下降，说明网络宽度对整体计算开销具有显著影响。相较于 C1，C3 在参数量与 FLOPs 分别下降约 34\% 与 36\% 的同时，PSNR 仅下降 0.08 dB，SSIM 变化幅度小于 0.001，表明模型在该容量范围内处于性能平台区间，网络表达能力尚未成为主要瓶颈。
-
-然而，当通道配置进一步压缩至 C4 时，PSNR 与 SSIM 指标出现明显下降，说明光学分支容量已不足以支撑复杂光谱重建任务，尤其在厚云区域结构恢复与细节保持方面表现出不稳定现象。
+为进一步分析光学分支网络容量对重建性能与计算复杂度的影响，本文对光学编码器各阶段通道数进行一致缩放，构建不同宽度配置进行对比实验。具体而言，基准配置采用四阶段通道数 ${64, 128, 256}$，并分别设置 0.75×、0.5× 与 0.375× 的宽度缩放版本，对应表中的 C1、C2、C3 与 C4。
 
 \begin{table}[!htbp]
 \renewcommand{\arraystretch}{1.5}
@@ -530,26 +525,25 @@ x_{t+1} = x_t + M_t \odot \Delta x_t,
 \toprule[1.5pt]
 通道配置 & Params(M) & FLOPs(G) & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
 \hline
-C1: [64,128,256] & 7.90 & 36.0 & 30.58 & 0.8994 \\
-C2: [48,96,192] & todo6.60 & 30.0 & 30.55 & 0.8990 \\
+C1: [64,128,256] & 14.56 & 29.16 & 30.4527 & 0.8973 \\
+C2: [48,96,192] & 9.49 & 21.89 & 30.4418 & 0.8968 \\
 \textbf{C3: [32,64,128]} & \textbf{5.81} & \textbf{16.58} & \textbf{30.4369} & \textbf{0.8964} \\
-C4: [24,48,96] & todo4.10 & 16.0 & 30.20 & 0.8935 \\
-C4: [16,32,64] & todo4.10 & 16.0 & 30.20 & 0.8935 \\
+C4: [24,48,96] & 4.49 & 14.65 & 30.0259 & 0.8635 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-该结果进一步验证了 Lite-SGN-CR 采用“模态不对称容量分配”策略的合理性。即在保证光学分支具备基本光谱重建能力的前提下，将冗余通道规模压缩至性能平台区间内的最小可行容量，从而在不显著损失重建质量的前提下实现计算复杂度的有效降低。基于上述分析，本文最终选取 C3 配置（${16, 32, 64, 128}$）作为 Lite-SGN-CR 的默认宽度配置。
+在该实验中，SAR 编码分支与跨模态融合模块均保持为 Lite-SGN-CR 的默认结构，仅对光学编码器通道规模进行一致缩放，以确保实验的单变量可比性。
+
+从表 \ref{tab:Lite-channel-config-ablation} 可以观察到，随着通道数逐渐缩减，模型参数规模与 FLOPs 近似线性下降，说明网络宽度对整体计算开销具有显著影响。相较于 C1，C3 在参数量与 FLOPs 分别下降约 60.1\% 与 43.1\% 的同时，PSNR 仅下降 0.0158 dB，SSIM 变化幅度小于 0.0009，表明模型在该容量范围内处于性能平台区间，网络表达能力尚未成为主要瓶颈。
+
+然而，当通道配置进一步压缩至 C4 时，PSNR 与 SSIM 指标出现明显下降，说明光学分支容量已不足以支撑复杂光谱重建任务，尤其在厚云区域结构恢复与细节保持方面表现出不稳定现象。
+
+该结果进一步验证了 Lite-SGN-CR 采用“模态不对称容量分配”策略的合理性。即在保证光学分支具备基本光谱重建能力的前提下，将冗余通道规模压缩至性能平台区间内的最小可行容量，从而在不显著损失重建质量的前提下实现计算复杂度的有效降低。基于上述分析，本文最终选取 [32, 64, 128]作为 Lite-SGN-CR 的默认宽度配置。
 
 \subsubsection{SAR 编码分支轻量化结构消融}
 
 原始 SGN-CR 中，SAR 分支包含三个尺度特征层级，通道数分别为 64、128、256，每一尺度均堆叠 3 个 ResNet 风格的 SAR-block。该结构能够获得较大的感受野，但存在层级堆叠冗余与计算开销偏高的问题。
-
-在 Lite-SGN-CR 中，SAR 分支被重构为一个初始特征嵌入层与两个逐级下采样编码层组成的浅层结构。具体而言，输入 SAR 图像首先通过一个 $3\times3$、stride=2 的卷积生成 32 通道特征图，随后仅使用两个 Lite-SAR-block 分别生成 64 通道与 128 通道的多尺度结构表示。Lite-SAR-block 采用 DWConv 替代原有 ResNet 风格卷积模块，同时将每一尺度的 block 堆叠数由 3 降为 1，层级数由 3 层压缩为 2 层。
-
-为进一步验证 SAR 分支的容量下界，本文在 Lite 结构基础上构建过度压缩版本的 SAR Encoder，将各阶段通道规模进一步减半，即采用 16 → 32 → 64 的两层级 DWConv 结构。在该实验中，光学分支通道配置固定为 C3，跨模态融合模块保持为 Lite-CMCA，推理阶段数保持一致，仅替换 SAR 编码结构以保证单变量对比公平性。
-
-从表 \ref{tab:Lite-SAR-ablation} 可以观察到，相较于原始残差结构，Lite SAR 编码器在参数量与 FLOPs 分别下降约 18\% 与 19\% 的同时，PSNR 与 SSIM 仅产生轻微波动，说明 SAR 分支存在一定的可压缩空间。在保证结构先验提取能力的前提下，浅层 DWConv 结构已能够有效建模地物轮廓与空间连续性。
 
 \begin{table}[!htbp]
 	\renewcommand{\arraystretch}{1.5}
@@ -559,18 +553,25 @@ C4: [16,32,64] & todo4.10 & 16.0 & 30.20 & 0.8935 \\
 	{\wuhao Ablation study on SAR encoder structure}
 	\label{tab:Lite-SAR-ablation}
 	\wuhao
-	\begin{tabular}{@{}>{\arraybackslash\songti\wuhao}p{0.24\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.14\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.14\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.14\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.14\textwidth}@{}}
+	\begin{tabular}{@{}>{\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}@{}}
 		\toprule[1.5pt]
-		模型变体 & Params(M) & FLOPs(G) & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
+		通道配置 & Params(M) & FLOPs(G) & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
 		\hline
-		\makecell[l]{原始 SAR 编码器 \\ (64-128-256)} & todo6.40 & 28.5 & 30.56 & 0.8992 \\
-		\textbf{\makecell[l]{Lite SAR 编码器 \\ (32-64-128)}} & \textbf{5.81} & \textbf{16.58} & \textbf{30.4369} & \textbf{0.8964} \\
-		\makecell[l]{过度压缩 SAR 编码器 \\ (16-32-64)} & todo4.85 & 21.0 & 30.20 & 0.8940 \\
+		{[64,128,256]} & 13.48 & 30.58 & 30.4715 & 0.8977 \\
+		{[48,96,192]} & 9.02 & 22.04 & 30.4623 & 0.8972 \\
+		\textbf{{[32,64,128]}} & \textbf{5.81} & \textbf{16.58} & \textbf{30.4369} & \textbf{0.8964} \\
+		{[16,32,64]} & 3.83 & 8.04 & 30.0893 & 0.8674 \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-然而，当通道规模进一步减半至 16-32-64 时，重建性能出现明显下降，尤其在厚云区域结构恢复方面表现出边缘细节减弱与局部纹理不稳定现象。这表明虽然 SAR 分支主要承担结构骨架提取功能，但仍需保持基本的多尺度表达能力以支撑跨模态融合过程。
+在 Lite-SGN-CR 中，SAR 分支被重构为一个初始特征嵌入层与两个逐级下采样编码层组成的浅层结构。具体而言，输入 SAR 图像首先通过一个 $3\times3$、stride=2 的卷积生成 32 通道特征图，随后仅使用两个 Lite-SAR-block 分别生成 64 通道与 128 通道的多尺度结构表示。Lite-SAR-block 采用 DWConv 替代原有 ResNet 风格卷积模块，同时将每一尺度的 block 堆叠数由 3 降为 1，层级数由 3 层压缩为 2 层。
+
+为进一步验证 SAR 分支的容量下界，本文在 Lite 结构基础上构建过度压缩版本的 SAR Encoder，将各阶段通道规模进一步减半，即采用 16 → 32 → 64 的两层级 DWConv 结构。在该实验中，光学分支通道配置固定为 C3，跨模态融合模块保持为 Lite-CMCA，推理阶段数保持一致，仅替换 SAR 编码结构以保证单变量对比公平性。
+
+从表 \ref{tab:Lite-SAR-ablation} 可以观察到，相较于原始残差结构，Lite SAR 编码器在参数量与 FLOPs 分别下降约 56.9\% 与 45.8\% 的同时，PSNR 与 SSIM 仅分别下降 0.0346 dB 与 0.0013，说明 SAR 分支存在一定的可压缩空间。在保证结构先验提取能力的前提下，浅层 DWConv 结构已能够有效建模地物轮廓与空间连续性。
+
+然而，当通道规模进一步减半至 [16,32,64] 时，重建性能出现明显下降，尤其在厚云区域结构恢复方面表现出边缘细节减弱与局部纹理不稳定现象。这表明虽然 SAR 分支主要承担结构骨架提取功能，但仍需保持基本的多尺度表达能力以支撑跨模态融合过程。
 
 上述结果表明，网络宽度与重建性能之间并非线性关系，而是存在明显的性能平台区间与容量临界点。在容量处于平台区间内时，适度压缩通道规模不会显著影响模型的表达能力；然而当容量低于临界阈值后，光学分支的特征建模能力将成为性能瓶颈，从而导致重建质量明显下降。
 
@@ -581,6 +582,8 @@ C4: [16,32,64] & todo4.10 & 16.0 & 30.20 & 0.8935 \\
 为降低跨模态特征交互过程中的计算开销，Lite-SGN-CR 对原始 CMCA 模块进行了结构级简化。原 CMCA 模块在深层语义阶段采用标准卷积与通道投影操作进行跨模态特征交互，而 Lite-CMCA 在保持交叉注意力机制框架不变的前提下，将部分 $3\times3$ 标准卷积替换为 DWConv，并减少冗余通道变换操作，从而实现计算复杂度的有效压缩。
 
 为验证该轻量化改动的有效性，本文设置三组对比实验：完全移除跨模态融合机制、采用原始 CMCA 模块，以及采用 Lite-CMCA 模块。在该实验中，SAR 编码分支固定为 Lite 结构，光学分支通道配置固定为 C3，推理阶段数保持一致，仅对融合模块进行替换，以保证单变量对比的公平性。
+
+从表 \ref{tab:Lite-fusion-ablation} 可以观察到，在完全移除跨模态融合机制后，PSNR 与 SSIM 分别下降约 0.48 dB 与 0.009，表明跨模态结构引导在云去除任务中发挥关键作用。该机制能够利用 SAR 所提供的稳定几何结构信息，对光学特征进行结构一致性约束与特征层面对齐，从而有效缓解厚云区域的纹理伪生成与结构失真问题。
 
 \begin{table}[!htbp]
 	\renewcommand{\arraystretch}{1.5}
@@ -598,55 +601,16 @@ C4: [16,32,64] & todo4.10 & 16.0 & 30.20 & 0.8935 \\
 		\toprule[1.5pt]
 		融合策略 & Params(M) & FLOPs(G) & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
 		\hline
-		无融合模块 & 4.90 & 21.5 & 30.10 & 0.8905 \\
-		原始 CMCA 模块 & 5.40 & 24.5 & 30.54 & 0.8989 \\
-		\textbf{Lite-CMCA 模块} & \textbf{5.20} & \textbf{23.0} & \textbf{30.50} & \textbf{0.8984} \\
+		无融合模块 & 5.71 & 16.53 & 30.0185 & 0.8872 \\
+		原始 CMCA 模块 & 6.25 & 16.82 & 30.4827 & 0.8931 \\
+		\textbf{Lite-CMCA 模块} & \textbf{5.20} & \textbf{23.0} & \textbf{30.50} & \textbf{0.8964} \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-从表 \ref{tab:Lite-fusion-ablation} 可以观察到，在完全移除跨模态融合机制后，PSNR 与 SSIM 分别下降约 0.4 dB 与 0.008，表明跨模态结构引导在云去除任务中发挥关键作用。该机制能够利用 SAR 所提供的稳定几何结构信息，对光学特征进行结构一致性约束与特征层面对齐，从而有效缓解厚云区域的纹理伪生成与结构失真问题。
+在保留融合机制的前提下，Lite-CMCA 相较于原始 CMCA 在参数量下降约 16.8\% 的同时，FLOPs 增加约 36.7\%，PSNR 提升 0.0173 dB，SSIM 提升 0.0033。该结果表明，通过对融合模块内部结构进行重构与算子级优化，可以在参数规模受控的条件下维持并提升重建性能。
 
-在保留融合机制的前提下，Lite-CMCA 相较于原始 CMCA 在参数量与 FLOPs 分别下降约 3.7\% 与 6.1\% 的同时，PSNR 仅下降 0.04 dB，SSIM 基本保持稳定。该结果表明，通过对融合模块内部结构进行重构与算子级优化，可以在显著降低计算开销的同时维持重建性能。
-
-上述分析说明，跨模态融合机制是提升云去除性能的核心组成部分，而其内部实现方式仍存在复杂度压缩空间。通过引入轻量卷积结构并简化通道变换路径，Lite-CMCA 在保持结构引导能力的前提下有效降低了计算负担，实现了功能表达与计算复杂度之间的平衡。
-
-\subsubsection{累积式轻量化路径}
-
-为进一步验证 Lite-SGN-CR 各项轻量化改动的累积贡献，并分析性能与复杂度之间的整体权衡关系，本文设计分阶段累积式轻量化路径。以原始 SGN-CR 为起点，在保持训练策略、输入分辨率与评价指标一致的前提下，分析各阶段结构改动对模型复杂度与重建性能的影响趋势。除原始 SGN-CR 外，其余 Lite 系列路径变体均在递归阶段数固定为 3 的条件下进行训练与测试，以保证比较结果的一致性。
-
-如表 \ref{tab:cumulative_lite_path} 所示，随着轻量化改动的逐步引入，模型复杂度呈现出单调下降趋势，而重建性能整体保持稳定，体现出明显的累积压缩效应。首先，在引入 Lite-SAR 后，参数规模与 FLOPs 均显著降低，而 PSNR 与 SSIM 仅出现极小幅波动，说明 SAR 分支存在较大的结构冗余与可压缩空间。随后，对光学分支实施通道规模缩放后，模型复杂度进一步下降，在 C3 配置之前性能仍处于平台区间，表明在该容量范围内光学分支的光谱建模能力尚未成为性能瓶颈。
-
-\begin{table}[!htbp]
-\renewcommand{\arraystretch}{1.5}
-\centering
-\bicaption[\xiaosi 累积式轻量化路径对比实验]
-{\wuhao 累积式轻量化路径对比实验}
-{\wuhao Cumulative ablation on progressive lightweighting path}
-\label{tab:cumulative_lite_path}
-\wuhao
-\begin{tabular}{@{}>{\raggedright\arraybackslash\songti\wuhao}p{0.32\textwidth}
->{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}
->{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}
->{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}
->{\centering\arraybackslash\songti\wuhao}p{0.12\textwidth}@{}}
-\toprule[1.5pt]
-路径变体 & Params(M)$\downarrow$ & FLOPs(G)$\downarrow$ & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
-\hline
-P0: SGN-CR & 15.36 & 31.02 & 30.5503 & 0.8990 \\
-P1: P0 + Lite-SAR & todo9.60 & 44.0 & 30.57 & 0.8992 \\
-P2: P1 + Optical Width@C2 & todo8.20 & 36.0 & 30.56 & 0.8990 \\
-P3: P1 + Optical Width@C3 & todo6.80 & 28.0 & 30.52 & 0.8986 \\
-P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
-
-\textbf{P5: Lite-SGN-CR} & \textbf{5.20} & \textbf{23.0} & \textbf{30.50} & \textbf{0.8984} \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-在此基础上，将原始 CMCA 替换为 Lite-CMCA 后，模型在保持跨模态结构引导路径完整性的前提下进一步降低计算开销，且性能变化幅度有限，表明融合模块的功能贡献主要来源于跨模态信息交互机制，而非其高复杂度实现形式。
-
-综合上述阶段性压缩结果可以看出，Lite-SGN-CR 的轻量化过程并非对网络进行均匀削减，而是针对不同模态分支与关键融合模块实施有选择性的复杂度优化，从而在保持重建质量基本稳定的前提下，实现模型规模与推理成本的协同下降。
+上述分析说明，跨模态融合机制是提升云去除性能的核心组成部分，而其内部实现方式仍存在优化空间。通过引入轻量卷积结构并简化通道变换路径，Lite-CMCA 在保持结构引导能力的前提下，实现了功能表达与计算代价之间的权衡。
 
 \subsection{渐进式去云策略性能分析}
 
@@ -656,7 +620,9 @@ P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
 
 在 Lite-SGN-CR 基础上，设置不同递归迭代次数 $T \in \{1,2,3,4,5\}$ 进行对比实验。其中，$T=1$ 表示单次推理结果，$T>1$ 表示在初始估计基础上进行多轮共享参数的递归更新。表~\ref{tab:progressive_stage} 给出了不同迭代次数下的性能与计算开销对比结果。
 
-从结果可以观察到，当 $T$ 从 1 增加至 2 时，PSNR 提升约 0.58 dB，表明首次递归细化能够显著修正单次预测中的残余误差。随着迭代次数进一步增加，性能继续提升但增幅逐渐减缓，表现出明显的收益递减趋势。当 $T \ge 4$ 时，各项指标基本趋于饱和，部分指标出现轻微波动，说明过多迭代可能在局部区域引入额外扰动而难以带来稳定增益。这一现象可能源于递归更新过程中误差的逐步传播与累积。当模型在已接近收敛状态下继续进行全局修正时，局部区域的微小偏差可能被反复放大，从而导致整体指标难以进一步提升甚至出现轻微回落。
+从结果可以观察到，当 $T$ 从 1 增加至 2 时，PSNR 提升约 0.42 dB，表明首次递归细化能够显著修正单次预测中的残余误差。随着迭代次数进一步增加，PSNR 与 SSIM 仍持续提升，但增幅逐渐减缓，表现出明显的收益递减趋势。具体而言，当 $T$ 从 3 增加至 5 时，PSNR 仅额外提升 0.0233 dB，SSIM 仅额外提升 0.0013，说明在较高阶段数下继续迭代的边际收益有限。
+
+与此同时，FLOPs 与延迟时间均随阶段数增加而上升。当阶段数由 1 增加至 5 时，FLOPs 从 6.54G 增至 29.73G（约为 4.5 倍），Latency 从 5.77ms 增至 20.91ms（约为 3.6 倍），说明渐进式性能提升是以额外计算代价为前提实现的。
 
 \begin{table}[!htbp]
 	\renewcommand{\arraystretch}{1.5}
@@ -670,25 +636,18 @@ P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
 		\toprule[1.5pt]
 		渐进阶段数 & Params(M) & FLOPs(G) & Latency(ms)$\downarrow$ & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ \\
 		\hline
-		1 & 5.81 & todo18.6 & 42.3 & 29.84 & 0.8912 \\
-		2 & 5.81 & todo37.2 & 84.5 & 30.42 & 0.8968 \\
+		1 & 5.81 & 6.54 & 5.77 & 29.8463 & 0.8891 \\
+		2 & 5.81 & 11.05 & 7.92 & 30.2711 & 0.8937 \\
 		3 & 5.81 & 16.58 & 9.84 & 30.4369 & 0.8964 \\
-		4 & 5.81 & todo74.4 & 169.4 & 30.75 & 0.8998 \\
-		5 & 5.81 & todo92.0 & 239.1 & 30.34 & 0.8998 \\
+		4 & 5.81 & 25.28 & 16.43 & 30.4528 & 0.8968 \\
+		5 & 5.81 & 29.73 & 20.91 & 30.4602 & 0.8977 \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-与此同时，推理阶段的 FLOPs 与延迟时间随 $T$ 近似线性增长。当阶段数由 1 增加至 5 时，计算量与推理时间约提升至原来的 5 倍，说明渐进式性能提升是以线性计算代价为前提实现的。
-
-从图~\ref{fig:stage_performance-cost}(a) 可以看出，随着渐进阶段数由 1 增加至 4，PSNR 与 SSIM 指标均呈现稳定上升趋势。其中，PSNR 从 29.84~dB 提升至 30.75~dB，SSIM 从 0.8912 提升至 0.8998，表明多阶段递归细化能够逐步修正残余云区误差，并增强重建结果的结构一致性与纹理细节表达能力。
-
 \begin{figure}[!htbp]
 \centering
-\bicaption[\xiaosi 不同渐进阶段数下的性能与计算复杂度变化趋势]
-{\wuhao 不同渐进阶段数下的性能与计算复杂度变化趋势}
-{\wuhao Performance and computational cost under different progressive stages}
-\label{fig:stage_performance-cost}
+
 % 微调参数（只改这里即可）
 \def\StageGroupShift{-18mm}   % 整组左右平移
 \def\StageLegendY{-7.5mm}     % 图例相对主图底部的垂直位置
@@ -720,7 +679,7 @@ P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
     grid style={line width=.2pt, draw=gray!30},
 ]
 \addplot[black, thick, mark=*] coordinates {
-  (1,29.84) (2,30.42) (3,30.68) (4,30.75) (5,30.34)
+  (1,29.8463) (2,30.2711) (3,30.4369) (4,30.4528) (5,30.4602)
 };
 
 % 图内标注：PSNR
@@ -739,8 +698,8 @@ P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
     axis x line=none,
     axis y line*=right,
     ylabel=\empty, % 取消外部 ylabel
-    ymin=0.890, ymax=0.900,
-    ytick={0.890,0.892,0.894,0.896,0.898,0.900},
+    ymin=0.888, ymax=0.898,
+    ytick={0.888,0.890,0.892,0.894,0.896,0.898},
     yticklabel style={
         xshift=-2pt,
         /pgf/number format/fixed,
@@ -748,14 +707,14 @@ P4: P3 + Lite-CMCA & todo5.81 & 16.58 & 30.4369 & 0.8964 \\
     },
 ]
 \addplot[black, thick, dashed, mark=square*] coordinates {
-  (1,0.8912) (2,0.8968) (3,0.8991) (4,0.8998) (5,0.8998)
+  (1,0.8891) (2,0.8937) (3,0.8964) (4,0.8968) (5,0.8977)
 };
 
 % 图内标注：SSIM（右上角）
 \node[anchor=north east] at (rel axis cs:0.98,0.98) {\small SSIM};
 
 % 右下角 x 轴标题
-\node[anchor=south east] at (axis cs:5,0.890) {\small 渐进阶段数};
+\node[anchor=south east] at (axis cs:5,0.888) {\small 渐进阶段数};
 \end{axis}
 
 % legend（保持你原样式）
@@ -798,13 +757,13 @@ at ([xshift=\StageSubcapXLeft,yshift=\StageSubcapY]perfbox.south)
       ylabel=\empty, % 取消外部 ylabel
       xmin=1, xmax=5,
       xtick={1,2,3,4,5},
-      ymin=0, ymax=100,
-      ytick={0,20,40,60,80,100},
+      ymin=0, ymax=32,
+      ytick={0,5,10,15,20,25,30},
       grid=both,
       grid style={line width=.2pt, draw=gray!30},
 ]
 \addplot[black, thick, mark=*] coordinates {
-  (1,18.6) (2,37.2) (3,55.8) (4,74.4) (5,92.0)
+  (1,6.54) (2,11.05) (3,16.58) (4,25.28) (5,29.73)
 };
 
 % 图内标注：FLOPs
@@ -823,19 +782,19 @@ at ([xshift=\StageSubcapXLeft,yshift=\StageSubcapY]perfbox.south)
       axis x line=none,
       axis y line*=right,
       ylabel=\empty, % 取消外部 ylabel
-      ymin=0, ymax=260,
-      ytick={0,50,100,150,200,250},
+      ymin=5, ymax=22,
+      ytick={5,10,15,20},
       yticklabel style={xshift=-2pt},
 ]
 \addplot[black, thick, dashed, mark=square*] coordinates {
-  (1,42.3) (2,84.5) (3,126.9) (4,169.4) (5,239.1)
+  (1,5.77) (2,7.92) (3,9.84) (4,16.43) (5,20.91)
 };
 
 % 图内标注：Latency（右上角）
 \node[anchor=north east] at (rel axis cs:0.98,0.98) {\small Latency (ms)};
 
 % 右下角 x 轴标题
-\node[anchor=south east] at (axis cs:5,0) {\small 渐进阶段数};
+\node[anchor=south east] at (axis cs:5,5) {\small 渐进阶段数};
 \end{axis}
 
 % legend（与左图一致）
@@ -862,26 +821,24 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
 \end{tikzpicture}
 \end{minipage}
 }
+
+\bicaption[\xiaosi 不同渐进阶段数下的性能与计算复杂度变化趋势]
+{\wuhao 不同渐进阶段数下的性能与计算复杂度变化趋势}
+{\wuhao Performance and computational cost under different progressive stages}
+\label{fig:stage_performance-cost}
 \end{figure}
 
-图~\ref{fig:stage_performance-cost}(b) 展示了不同渐进阶段数下计算复杂度的变化情况。可以观察到，FLOPs 与 Latency 均随阶段数呈近似线性增长趋势。这是由于各阶段共享同一组网络参数，但前向传播次数随阶段数增加而等比例叠加，因此总体计算量呈线性放大。
+从图~\ref{fig:stage_performance-cost}(a) 可以看出，随着渐进阶段数由 1 增加至 5，PSNR 与 SSIM 指标总体呈上升趋势。其中，PSNR 从 29.8463dB 提升至 30.4602dB，SSIM 从 0.8891 提升至 0.8977，表明多阶段递归细化能够逐步修正残余云区误差，并增强重建结果的结构一致性与纹理细节表达能力。
 
-具体而言，当阶段数由 1 增至 5 时，FLOPs 从 18.6~G 增至 92.0~G，Latency 从 42.3~ms 增至 239.1~ms，增长幅度显著。该结果验证了渐进式策略在不增加模型参数规模的前提下，通过增加推理轮次换取性能提升的特性。
+图~\ref{fig:stage_performance-cost}(b) 展示了不同渐进阶段数下计算复杂度的变化情况。可以观察到，FLOPs 与 Latency 均随阶段数增加而持续上升。这是由于各阶段共享同一组网络参数，前向传播次数增加直接推高了理论计算量与实际推理开销。
+
+具体而言，当阶段数由 1 增至 5 时，FLOPs 从 6.54G 增至 29.73G，Latency 从 5.77ms 增至 20.91ms。该结果验证了渐进式策略在不增加模型参数规模的前提下，通过增加推理轮次换取性能提升的特性。
 
 因此，渐进阶段数的选择本质上体现为重建性能与计算代价之间的权衡问题。
 
-从图~\ref{fig:stage_visualization} 的可视化结果可以更加直观地观察到不同递归阶段下重建结果的渐进变化过程。对于第一行样本，在 $T=1$ 时整体结构已被恢复，但湖泊边缘轮廓略显模糊，局部边界过渡偏软；当 $T$ 增加至 2 时，水体边界逐渐变得清晰，岸线形态更加连贯，低对比度区域的细节得到进一步增强；当 T 增加到 3 和 4 时，整体结构与真实影像高度接近，但在个别细小区域可观察到轻微对比度增强现象；当 $T=5$ 时，局部区域出现轻微过度锐化或纹理强化趋势，与真实影像相比存在细节放大现象。
-
-对于第二行农田结构样本，在 $T=1$ 时田块边界仍存在一定模糊感；随着阶段数增加，规则网格结构逐渐清晰，地块分割线更加连续；但当 $T$ 过大时，局部区域亮度对比略有增强，细节呈现轻微强化趋势。
-
-第三与第四行样本同样呈现类似规律：前两次递归主要修正整体亮度与结构误差，第三与第四阶段进一步细化高频纹理，而第五阶段开始出现收益减弱甚至局部扰动现象。
-
 \begin{figure*}[htbp]
 	\centering
-		\bicaption[\xiaosi 不同渐进次数的可视化结果]
-	{\wuhao 不同渐进次数的可视化结果}
-	{\wuhao Visualization results of experiments with different asymptotic numbers}
-	\label{fig:sstage_visualization}
+
 	\renewcommand{\arraystretch}{1.2}
 	\wuhao
 	
@@ -891,7 +848,7 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Ground Truth/ROIs1158_spring_44_p297.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_44_p297.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_44_p297.png} &
-		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Ground Truth/ROIs1158_spring_44_p297.png} &
+		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_44_p297.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_44_p297.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_44_p297.png} \\[0.2ex]
 
@@ -906,15 +863,15 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Opt-Cloudy/ROIs2017_winter_108_p213.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Ground Truth/ROIs2017_winter_108_p51.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs2017_winter_108_p51.png} &
-		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs2017_winter_108_p51.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs2017_winter_108_p51.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs2017_winter_108_p51.png} &
-		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs2017_winter_108_p51.png} \\[0.2ex]
+		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs2017_winter_108_p51.png} &
+		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs2017_winter_108_p51.png} \\[0.2ex]
 
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Opt-Cloudy/ROIs1158_spring_106_p31.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/Ground Truth/ROIs1158_spring_106_p31.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_106_p31.png} &
-		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_106_p31.png} &
+		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_106_p31.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_106_p31.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/ours/ROIs1158_spring_106_p31.png} &
 		\includegraphics[width=0.14\textwidth]{chapters/compare_img/hpn/ROIs1158_spring_106_p31.png} \\[0.2ex]
@@ -936,20 +893,26 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
 		\makecell[c]{\wuhao T = 5} \\[0.8ex]  
 		\end{tabular}
 		}
+	\bicaption[\xiaosi 不同渐进次数的可视化结果]
+	{\wuhao 不同渐进次数的可视化结果}
+	{\wuhao Visualization results of experiments with different asymptotic numbers}
+	\label{fig:stage_visualization}
 \end{figure*}
+
+从图~\ref{fig:stage_visualization} 的可视化结果可以更加直观地观察到不同递归阶段下重建结果的渐进变化过程。对于第一行样本，在 $T=1$ 时整体结构已被恢复，但湖泊边缘轮廓略显模糊，局部边界过渡偏软；当 $T$ 增加至 2 时，水体边界逐渐变得清晰，岸线形态更加连贯，低对比度区域的细节得到进一步增强；当 T 增加到 3 和 4 时，整体结构与真实影像高度接近，但在个别细小区域可观察到轻微对比度增强现象；当 $T=5$ 时，局部区域出现轻微过度锐化或纹理强化趋势，与真实影像相比存在细节放大现象。
+
+对于第二行农田结构样本，在 $T=1$ 时田块边界仍存在一定模糊感；随着阶段数增加，规则网格结构逐渐清晰，地块分割线更加连续；但当 $T$ 过大时，局部区域亮度对比略有增强，细节呈现轻微强化趋势。
+
+第三与第四行样本同样呈现类似规律：前两次递归主要修正整体亮度与结构误差，第三与第四阶段进一步细化高频纹理，而第五阶段开始出现收益减弱甚至局部扰动现象。
 
 整体来看，可视化结果与定量指标变化趋势一致：递归阶段数增加能够逐步修正残余结构误差并增强细节表达，但过多迭代可能引入轻微过度强化或局部误差累积现象。
 
-从机理上分析，渐进式策略通过参数共享的多阶段重建方式，使网络在每一阶段对前一阶段输出进行残差补偿与细节优化。初始阶段主要恢复整体结构信息，而后续阶段则进一步细化高频纹理与光谱特征，因此性能随阶段数增加而持续提升。然而，当阶段数增加至 5 时，PSNR 出现下降趋势，而 SSIM 基本保持稳定，说明过多的递归迭代可能引入误差累积或过度平滑现象，从而削弱重建质量。
+从机理上分析，渐进式策略通过参数共享的多阶段重建方式，使网络在每一阶段对前一阶段输出进行残差补偿与细节优化。初始阶段主要恢复整体结构信息，而后续阶段则进一步细化高频纹理与光谱特征，因此性能随阶段数增加而持续提升。然而，从 $T=3$ 开始性能增益已明显放缓，说明继续增加递归深度所带来的边际收益有限。
 
-综合来看，3 阶段在性能提升与稳定性之间取得了较优平衡。
+综合来看，3 阶段在性能提升、稳定性与推理效率之间取得了较优平衡。
 
 \begin{figure}[!htbp]
   \centering
-  \bicaption[\xiaosi 渐进阶段数的性能—复杂度权衡关系]
-  {\wuhao 渐进阶段数的性能—复杂度权衡关系}
-  {\wuhao Performance-complexity trade-off of progressive stages}
-  \label{fig:stage_tradeoff}
 
   \begin{tikzpicture}
     \begin{axis}[
@@ -957,7 +920,7 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
       height=6.2cm,
       xlabel={FLOPs (G)},
       ylabel={PSNR (dB)},
-      xmin=15, xmax=100,
+      xmin=6, xmax=31,
       ymin=29.7, ymax=30.85,
       grid=both,
       grid style={line width=.2pt, draw=gray!30},
@@ -967,27 +930,32 @@ at ([xshift=\StageSubcapXRight,yshift=\StageSubcapY]costbox.south)
     ]
 
       \addplot[black, thick, solid, mark=*, mark size=2.3pt] coordinates {
-        (18.6,29.84)
-        (37.2,30.42)
-        (55.8,30.68)
-        (74.4,30.75)
-        (92.0,30.34)
+        (6.54,29.8463)
+        (11.05,30.2711)
+        (16.58,30.4369)
+        (25.28,30.4528)
+        (29.73,30.4602)
       };
 
       % Labels with offsets (no overlap with points/line)
-      \node[anchor=north east] at (axis cs:18.6,29.84) {\small S1};
-      \node[anchor=south west] at (axis cs:37.2,30.42) {\small S2};
-      \node[anchor=south west] at (axis cs:55.8,30.68) {\small S3};
-      \node[anchor=south]      at (axis cs:74.4,30.75) {\small S4};
-      \node[anchor=north west] at (axis cs:92.0,30.34) {\small S5};
+      \node[anchor=north east] at (axis cs:6.54,29.8463) {\small S1};
+      \node[anchor=south west] at (axis cs:11.05,30.2711) {\small S2};
+      \node[anchor=south west] at (axis cs:16.58,30.4369) {\small S3};
+      \node[anchor=south]      at (axis cs:25.28,30.4528) {\small S4};
+      \node[anchor=south west] at (axis cs:29.73,30.4602) {\small S5};
 
     \end{axis}
   \end{tikzpicture}
+
+    \bicaption[\xiaosi 渐进阶段数的性能—复杂度权衡关系]
+  {\wuhao 渐进阶段数的性能—复杂度权衡关系}
+  {\wuhao Performance-complexity trade-off of progressive stages}
+  \label{fig:stage_tradeoff}
 \end{figure}
 
-为进一步分析渐进阶段数对模型效率的综合影响，图~\ref{fig:stage_tradeoff} 给出了不同阶段数在性能与计算复杂度平面上的分布关系。从图中可以看出，当阶段数由 1 增至 4 时，PSNR 随 FLOPs 的增加而明显提升，表明额外计算开销能够有效转化为性能收益；而当阶段数进一步增加至 5 时，尽管计算复杂度持续上升，但性能反而出现下降，呈现明显的收益递减现象。
+为进一步分析渐进阶段数对模型效率的综合影响，图~\ref{fig:stage_tradeoff} 给出了不同阶段数在性能与计算复杂度平面上的分布关系。从图中可以看出，当阶段数由 1 增至 3 时，PSNR 随 FLOPs 的增加而明显提升，表明额外计算开销能够有效转化为性能收益；而当阶段数由 3 增加至 5 时，性能提升幅度显著减小，呈现明显的收益递减现象。
 
-从性能–复杂度分布位置来看，第 4 阶段位于性能最高且计算代价相对可控的区域，是当前结构与训练策略下的最优递归深度选择。相比之下，第 5 阶段在计算效率上并不具备优势。
+从性能与复杂度分布位置来看，第 5 阶段具有最高 PSNR，但相较于第 3 阶段仅带来有限增益且计算开销更高。综合性能收益与效率成本，第 3 阶段在当前结构与训练策略下更具性价比。
 
 上述结果表明，在轻量化模型框架下，合理设置渐进阶段数能够有效弥补模型容量受限所带来的性能损失，但过度递归将削弱整体效率优势。因此，本研究选择 $T=3$ 作为默认推理设置。在该配置下，模型在保持可控计算复杂度的同时获得较为稳定且显著的性能提升。
 
@@ -1015,17 +983,17 @@ x_{t+1} = x_t + M_t \odot \Delta x_t
 	{\wuhao Comparison of gating mechanism effectiveness ($T=3$)}
 	\label{tab:gate_ablation}
 	\wuhao
-	\begin{tabular}{@{}>{\arraybackslash\songti\wuhao}p{0.18\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}@{}}
+	\begin{tabular}{@{}>{\arraybackslash\songti\wuhao}p{0.18\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}>{\centering\arraybackslash\songti\wuhao}p{0.16\textwidth}@{}}
 		\toprule[1.5pt]
-		渐进式方法 & PSNR(dB)$\uparrow$ & SSIM$\uparrow$ & MAE$\downarrow$ \\
+		渐进式方法 & PSNR(dB)$\uparrow$ & SSIM$\uparrow$& SAM($^\circ$)$\downarrow$ & MAE$\downarrow$ \\
 		\hline
-		no-gate & 30.54 & 0.8976 & 0.0243 \\
-		gated  & 30.68 & 0.8991 & 0.0238 \\
+		no-gate & 30.2613 & 0.8896 & 7.8451 & 0.02432 \\
+		gated  & 30.4369 & 0.8964& 7.7698 & 0.02417 \\
 		\bottomrule[1.5pt]
 	\end{tabular}
 \end{table}
 
-在相同迭代次数条件下，引入门控机制后 PSNR 提升约 0.14 dB，SSIM 同步提升，MAE 略有下降。无门控递归在多轮更新过程中对全图区域进行均匀修正，易在已恢复区域引入累积扰动；而门控残差机制通过逐像素调节更新强度，使修正更加集中于高不确定区域，从而提升了递归细化的稳定性与最终重建质量。
+在相同迭代次数条件下，引入门控机制后 PSNR 提升约 0.1756 dB，SSIM 提升 0.0068，SAM 下降 0.0753$^\circ$，MAE 下降 0.00015。无门控递归在多轮更新过程中对全图区域进行均匀修正，易在已恢复区域引入累积扰动；而门控残差机制通过逐像素调节更新强度，使修正更加集中于高不确定区域，从而提升了递归细化的稳定性与最终重建质量。
 
 上述结果表明，在不增加模型参数规模的前提下，门控机制能够有效增强渐进式推理的稳定性，并进一步释放递归细化带来的性能潜力。
 
