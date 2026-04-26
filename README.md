@@ -1,3 +1,3 @@
 # SGN-CR
 
-The code was uploaded quickly~
+The code will be uploaded soon~
